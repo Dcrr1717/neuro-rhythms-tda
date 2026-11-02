@@ -16,7 +16,7 @@ from .classical import build_classifier
 
 def family_permutation_importance(F, y, families, folds_one_repeat, model: str,
                                   n_permutations: int = 5, seed: int = 0,
-                                  rf_trees: int = 300, n_jobs: int = 1) -> dict:
+                                  rf_trees: int = 300, n_jobs: int = 1, pre=None) -> dict:
     F = np.asarray(F, dtype=float)
     y = np.asarray(y)
     families = np.asarray(families)
@@ -25,7 +25,7 @@ def family_permutation_importance(F, y, families, folds_one_repeat, model: str,
     drops = {f: [] for f in fams}
     base_accs = []
     for k, (tr, te) in enumerate(folds_one_repeat):
-        clf = build_classifier(model, seed + k, rf_trees, n_jobs)
+        clf = build_classifier(model, seed + k, rf_trees, n_jobs, pre)
         clf.fit(F[tr], y[tr])
         Xte = F[te]
         base = float(np.mean(clf.predict(Xte) == y[te]))

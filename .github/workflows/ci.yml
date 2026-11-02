@@ -33,9 +33,14 @@ jobs:
       - name: Small default benchmark (offline, ~2 min)
         if: matrix.python-version == '3.12'
         run: python -m neurorhythms --config configs/small.yaml --no-cache
-      - name: Upload small-run report
+      - name: Small SW1PerS + Riemannian benchmark (offline, single + multi-channel, ~5-10 min)
+        if: matrix.python-version == '3.12'
+        run: python -m neurorhythms.sw1pers_bench --config configs/sw1pers_small.yaml --no-cache
+      - name: Upload small-run reports
         if: matrix.python-version == '3.12'
         uses: actions/upload-artifact@v4
         with:
-          name: small-run
-          path: results/small/
+          name: small-runs
+          path: |
+            results/small/
+            results/sw1pers_small/

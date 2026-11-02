@@ -218,7 +218,7 @@ def importance_bars(imp: dict, path):
         s = imp[m]["std_drop"]
         vals = np.array([d[f] for f in fams])
         errs = np.array([s[f] for f in fams])
-        cols = [C2 if f.startswith("topo") else C1 for f in fams]
+        cols = [C2 if f.startswith(("topo", "sw1pers", "crocker")) else C1 for f in fams]
         a.barh(yp, vals, xerr=errs, color=cols, height=0.6,
                error_kw={"ecolor": INK2, "lw": 0.8})
         a.axvline(0, color=INK2, lw=0.8)

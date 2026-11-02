@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "neurorhythms"
-version = "0.1.0"
-description = "Healthy vs epileptic vs parkinsonian rhythms from neural-mass EEG: topological-spectral descriptor vs strong baselines vs 1D-CNN, grouped CV."
+version = "0.2.0"
+description = "Healthy vs epileptic vs parkinsonian rhythms from neural-mass EEG: topology (sublevel-set, SW1PerS) vs band power, Riemannian covariance and a 1D-CNN, grouped CV."
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Cesar Daniel Reinoso"}]
@@ -17,6 +17,8 @@ dependencies = [
     "gudhi>=3.8",
     "matplotlib>=3.7",
     "pyyaml>=6.0",
+    "ripser>=0.6",
+    "pyriemann>=0.6",
 ]
 
 [project.optional-dependencies]
@@ -25,6 +27,7 @@ dev = ["pytest>=7"]
 
 [project.scripts]
 neurorhythms = "neurorhythms.pipeline:main"
+neurorhythms-sw1pers = "neurorhythms.sw1pers_bench:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

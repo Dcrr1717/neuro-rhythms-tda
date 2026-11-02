@@ -29,3 +29,9 @@ def test_cnn_learns_frequency_classes():
     folds = make_folds(y, g, 3, 1, seed=0)
     r = cross_validate_cnn(X, y, folds, epochs=12, batch_size=16, lr=3e-3, threads=1)
     assert np.mean(r["pred"][0] == y) > 0.8
+
+
+def test_cnn_multichannel_input():
+    out = build_cnn(in_channels=6)(torch.zeros(4, 6, 1000))
+    assert tuple(out.shape) == (4, 3)
+    assert n_parameters(in_channels=6) == n_parameters() + 5 * 16 * 7
