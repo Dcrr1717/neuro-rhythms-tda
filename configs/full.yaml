@@ -1,0 +1,52 @@
+# Full configuration: the run reported in docs/RESULTS.md and figures/.
+# ~1-1.5 h on 4 CPU cores (simulation ~2 min, features ~3 min, CV + CNN ~1 h, noise sweep ~25 min).
+# All settings below were fixed before this configuration was first run.
+name: full
+seed: 2026
+n_jobs: 4
+cache_dir: data/cache
+
+simulation:
+  runs_per_class: 80        # 240 runs in total
+  duration: 40.0            # -> 10 windows of 4 s per run, 2400 windows
+  fs: 250.0
+  dt: 0.0005
+  transient: 2.0
+
+measurement:
+  window: 4.0
+  pink_level: [0.2, 0.8]
+  white_level: [0.05, 0.2]
+
+topology: {}
+
+evaluation:
+  n_splits: 4               # same protocol as the GEM hard benchmark: 4 folds x 5 repeats
+  n_repeats: 5
+  bootstrap: 2000
+  rf_trees: 300
+  go_margin: 0.05
+
+cnn:
+  enabled: true
+  epochs: 25
+  batch_size: 64
+  lr: 0.001
+  weight_decay: 0.0001
+  width: 16
+
+sanity: {enabled: true}
+importance: {enabled: true, n_permutations: 5}
+
+# Exploratory, post hoc: NOT part of the Go/No-Go rule.
+noise_sweep:
+  enabled: true
+  scales: [2.0, 4.0]        # measurement noise x2 and x4
+  n_repeats: 2
+  sets: [bandpower+hjorth, baselines_union, topo, descriptor, union]
+  cnn: true
+
+outputs:
+  out_dir: results/full
+  figures_dir: figures
+  results_md: docs/RESULTS.md
