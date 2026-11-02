@@ -3,7 +3,10 @@
 *Written for a neuroscientist who wants to know what was simulated, why those
 parameter regimes, what each feature measures physiologically, and how much
 the result can and cannot say. Numbers quoted here come from
-[`RESULTS.md`](RESULTS.md) (full configuration).*
+[`RESULTS.md`](RESULTS.md) (first benchmark, sections 1-7) and
+[`SW1PERS_RESULTS.md`](SW1PERS_RESULTS.md) (second benchmark: SW1PerS,
+multi-channel montage and Riemannian baseline, section 8), full
+configurations.*
 
 ## 1. Question
 
@@ -321,13 +324,261 @@ temporal structure.
   that is precisely what the strict baselines (skewness, kurtosis, line
   length) also capture.
 
+## 8. Second benchmark: the topology made for signals, and the honest SOTA baseline
+
+The first benchmark compared topology with band power on terms that favoured
+band power. Sublevel-set persistence of a trace measures peak prominences,
+and Alpha-complex persistence of a 3-D delay embedding at a few fixed lags
+measures the size of the oscillation loop. Both are largely functions of the
+amplitude distribution and the power spectrum, which band power already
+summarises. The second benchmark (`python -m neurorhythms.sw1pers_bench`,
+results in [`SW1PERS_RESULTS.md`](SW1PERS_RESULTS.md)) makes the fair test
+and adds the baseline a reviewer would ask for.
+
+### 8.1 SW1PerS: sliding windows and 1-persistence
+
+Perea & Harer (2015) showed that the sliding-window embedding
+`SW_{M,tau} f(t) = (f(t), f(t + tau), ..., f(t + M tau))` of a periodic signal
+traces a closed curve, and that the persistence of the corresponding H1
+class is controlled by the signal's Fourier coefficients and is largest when
+the window `M tau` is close to one period (more precisely `P M / (M + 1)`).
+After pointwise centring and normalisation the cloud lies on a sphere, so
+the measure ignores amplitude, offset and slow amplitude modulation. It
+scores *how periodic* the signal is, not how much power it has at a given
+frequency. Two incommensurate rhythms (alpha plus an unrelated beta, say)
+embed on a torus and leave a *second* persistent H1 class, so the second
+largest persistence measures quasi-periodicity. SW1PerS (Perea, Deckard,
+Haase & Harer 2015) is the practical pipeline: spline interpolation,
+sliding-window embedding, centring and normalisation, mean-shift denoising,
+Vietoris-Rips persistence over Z_p, and the periodicity score
+`1 - mp / sqrt(3)`.
+
+We apply it to every channel of every 4-s window with the literature
+defaults, fixed before any classification: M = 12 (six harmonics), 160
+sliding-window points, 8-nearest-neighbour mean-shift, Z_11 coefficients
+(`ripser`). Rhythms differ across classes, so each window is scored at three
+fixed periods (4, 10 and 20 Hz: spike-and-wave, alpha, beta) and at its own
+dominant period, estimated without labels from the autocorrelation. Per
+scale we keep five numbers: the largest and second-largest persistence, the
+birth of the top class, the total persistence and the persistent entropy.
+A CROCKER-style summary (Topaz, Ziegelmeier & Halverson 2015) adds how the
+loop structure *evolves* over the window: Betti-1 on a fixed grid of Rips
+scales for 1-s segments every 0.5 s, averaged over segments, with its
+spread over segments, plus the mean, spread and minimum of the per-segment
+persistence. This yields 43 numbers per channel. In `figures/sw1pers/sw1pers_clouds.png` a
+pure sine gives one loop, the 10 + 21.3 Hz mixture gives two, and white noise
+gives none.
+
+### 8.2 A multi-channel montage
+
+Covariance-based methods need channels, and real EEG has cross-channel
+structure, so the second benchmark adds a multi-channel track. Each run is a
+small network of four Jansen-Rit columns coupled by delayed long-range
+excitatory connections (Jansen & Rit 1995 coupled two columns; David &
+Friston 2003 generalised this to networks). Column `i` receives
+`K sum_j W_ij (r_j(t - D_ij) - rbar_j)`, the delayed fluctuations of its
+neighbours' pyramidal firing rates. The ring connectivity has strong
+neighbours and a weak opposite column, the gain is K ~ U(10, 30) and the
+delays are 10-25 ms. All four columns are driven by one STN-GPe loop with
+column-specific gains. Six sensors see the four sources through a Gaussian
+lead field (volume conduction) with per-run jitter. A fraction (20-50 %) of
+the 1/f background is shared across channels. Every channel of every window
+is z-scored, exactly as in the single-channel track.
+
+The classes are defined *only* by the same parameters as before: in
+epileptic runs one randomly placed focus column is in the spike regime
+(focal epilepsy whose location varies across subjects); in parkinsonian runs
+the shared loop is above its Hopf threshold. Coupling, delays, lead field
+and noise are drawn from the same ranges in every class. The montage was not
+tuned to favour any method. A pilot with a separate seed (999) ran only the
+band-power reference, and only to confirm that it was not at ceiling (~0.91,
+leaving room for a +0.05 margin). No candidate view was run on the pilot to
+choose data or hyperparameters.
+
+Cross-channel structure then arises from physiology rather than from the
+labels. Delayed coupling entrains the columns to a common alpha rhythm. The
+shared basal-ganglia loop makes parkinsonian beta *coherent* across channels.
+Volume conduction spreads the large epileptic spikes over neighbouring
+sensors (`figures/sw1pers/example_multichannel.png`).
+
+### 8.3 The honest baseline: Riemannian geometry of covariance matrices
+
+For multi-channel EEG the strongest classical approach is to describe a
+window by the covariance matrix of its channels and to classify these
+symmetric positive-definite (SPD) matrices with Riemannian geometry
+(Barachant et al. 2012, 2013; reviews by Congedo, Barachant & Bhatia 2017 and
+Lotte et al. 2018). We use the standard filter-bank form: band-pass the window in
+the five bands of the band-power baseline, estimate one OAS-shrunk
+covariance per band (Chen et al. 2010), and map each band's matrices to the
+tangent space at their Riemannian mean (`pyriemann`), where a linear
+classifier is appropriate. The reference mean is a statistic of the training
+data, so it is fitted inside every CV fold.
+
+This baseline largely *subsumes* the previous winner. With z-scored
+channels, the diagonal entry of a band's covariance is that channel's share
+of variance in the band, i.e. its relative band power (a unit test checks
+this), and hence also the band ratios. The off-diagonal entries add
+band-limited cross-channel coupling, which band power cannot see. Another
+unit test builds two classes with identical spectra that differ only in
+coupling: band power is at chance, the tangent space separates them. What
+five bands do *not* carry is the finer spectral shape of the band-power view
+(peak frequency, spectral edge frequencies, spectral entropy). A broadband
+variant (`riemann_broadband`, one correlation matrix per window) isolates
+the coupling part.
+
+### 8.4 What the second benchmark found
+
+Full configuration: 240 runs per track (80 per class), 2400 windows per
+track, 4 folds x 5 repeats grouped by run, 2000 paired group-bootstrap
+resamples. The single-channel track is the dataset of section 6 (it
+reproduces band power 0.955, all baselines 0.962 and the CNN 0.966
+exactly). All numbers are in [`SW1PERS_RESULTS.md`](SW1PERS_RESULTS.md).
+
+**Q1. Does SW1PerS add value over band power? NO-GO.**
+
+* On its own, SW1PerS is the *weakest* representation in both tracks:
+  0.882 (single) and 0.819 (multi), 0.072 below band power in each
+  (CIs -0.094 to -0.050). It is also below the sublevel/Alpha topology of
+  the first benchmark (-0.042 single, -0.036 multi, CIs below 0). Dropping
+  the CROCKER summary changes little (0.875 / 0.829).
+* Added to band power, the pre-specified test: +0.008 [+0.001, +0.016]
+  on the single channel (statistically detectable, P(margin <= 0) = 0.013,
+  but a sixth of the +0.05 margin; band power is at 0.955, so a GO was
+  arithmetically impossible there anyway), and -0.001 [-0.007, +0.003] on
+  the montage, where a GO was possible (band power 0.891).
+* Added to all non-topological features: -0.001 in both tracks.
+
+**Q2. Does Riemannian covariance beat band power and the descriptor? Only
+marginally, and not against both.**
+
+* On the montage, the tangent-space view is the best single hand-crafted
+  representation: 0.904 [0.870, 0.934]. Against band power (0.891) the
+  margin is +0.013 [+0.000, +0.026] (P(margin <= 0) = 0.023): detectable,
+  but a quarter of the GO margin. Against the topological-spectral
+  descriptor (0.895) it is +0.010 [-0.002, +0.023], not detectable. It
+  ties the full non-topological union (0.906; -0.002 [-0.013, +0.009]),
+  which has the finer spectral shape that five band covariances lack.
+* Its gain is where the physiology says it should be. Parkinsonian recall
+  rises from 0.91 (band power) to 0.94, because the shared basal-ganglia
+  loop makes beta *coherent* across channels, and coherence is exactly what
+  the off-diagonal terms add. Epileptic recall is unchanged (0.84 vs 0.85).
+* Coupling alone (`riemann_broadband`) reaches 0.670. That is far above
+  chance, so cross-channel structure does carry class information, but
+  much less than the per-channel spectra (-0.222 vs band power).
+
+**Q3. Does adding topology to the Riemannian features help? NO.**
+Riemann + SW1PerS: -0.008 [-0.018, +0.001]. Riemann + sublevel/Alpha
+topology: -0.014 [-0.027, -0.003] (it hurts). Every view together vs every
+non-topological view: -0.007 [-0.017, +0.001].
+
+**The 1D-CNN ties again**: 0.966 single (+0.011 [-0.003, +0.027] vs band
+power) and 0.896 multi (-0.008 [-0.025, +0.008] vs Riemann).
+
+**Leak detectors pass**: permuted run labels give 0.332 (single) and 0.321 /
+0.320 (multi, union / Riemann pipeline, which refits its tangent space in
+every fold); ignoring the run grouping would have inflated multi-channel
+band power from 0.885 to 0.946 and Riemann from 0.901 to 0.943.
+
+### 8.5 Why nothing reaches the GO margin on the montage
+
+On the montage the arithmetic headroom above band power (0.109) is larger
+than the GO margin, yet no view gets close to it. The post hoc breakdown
+in `SW1PERS_RESULTS.md` (exploratory, computed from the out-of-fold
+predictions of the main run, not part of the verdicts) shows why. In the
+noise-free source signals, 25 % of the epileptic focus columns never spike.
+Those 20 epileptic runs are dynamically healthy. Together with 8
+parkinsonian runs whose beta does not reach any column and 4 healthy runs,
+they make 32 *borderline* runs of 240. The coupling to healthy neighbours
+explains only a small part of this. A one-off check re-simulated the 80
+epileptic networks with the inter-column coupling switched off (K = 0, 12 s,
+seed 7): 21 % of the foci still did not spike, against 26 % with coupling.
+Most non-spiking foci are parameter draws close to the alpha/spike boundary.
+Under the same criterion, 90 % of the single-column epileptic runs spike;
+that gap was not investigated further.
+
+* On the 208 runs that show their class signature, every good view is near
+  ceiling: band power 0.960, Riemann 0.970, all non-topological features 0.968,
+  CNN 0.956 (SW1PerS 0.902).
+* On the 32 borderline runs every view is at 0.44-0.51 (SW1PerS 0.28):
+  with the spike regime absent from the signal, no representation can
+  recover the label.
+
+The remaining errors are therefore mostly a *data* ceiling, not a
+representation ceiling. On typical runs the room above band power is about
+0.04 accuracy, and Riemann takes a quarter of it. The single-channel track
+shows the same pattern: on runs with their signature, band power is already
+at 0.991. There, adding SW1PerS lifts the 20 borderline runs from 0.555 to
+0.646, which is the source of its +0.008. That figure rests on 20 runs and is
+exploratory. On the same runs the CNN reaches 0.691 and catches 74 % of the
+windows of sporadically spiking epileptic runs (band power 38 %).
+
+### 8.6 Interpretation
+
+* **SW1PerS measures the wrong thing for this task.** It was designed to
+  score *how periodic* a signal is, independently of its amplitude and,
+  through the window matched to the dominant period, largely of its
+  frequency. Here the classes differ in *which* rhythm is present (alpha,
+  beta, 2-6 Hz spike-and-wave) and in waveform asymmetry, not in how
+  regular the rhythm is. All three classes are noise-driven rhythms of
+  similar regularity. The periodicity score is a faithful but nearly
+  class-blind summary. This is the expected failure mode of an invariant
+  descriptor applied to a task whose label lives in the quantity it is
+  invariant to. It is not a defect of the method.
+* **The montage confirms the single-channel verdict.** Neither the
+  sublevel/Alpha persistence of the first benchmark nor SW1PerS adds
+  information that band power, the full baseline union or the Riemannian
+  view lack. Both are NO-GO on every pre-specified comparison, with CIs
+  tight enough (about +/-0.01) to rule out any gain near +0.05.
+* **Riemannian geometry is the right baseline, but not a decisive winner
+  here.** It is the best or tied-best classical view on the montage, and its
+  small gain is physiologically interpretable (coherent parkinsonian beta).
+  Because the simulator's class information is mostly spectral and
+  per-channel, coupling adds only an increment. On real multi-channel EEG,
+  where coupling patterns (e.g. cortico-cortical beta coherence in
+  Parkinson's disease, Silberstein et al. 2005) and spatial topographies
+  matter more, the gap may be larger. This benchmark does not test that.
+* **Publishable as a negative result**: two topological representations,
+  one of them the method designed for signals, fail to add to band power
+  on single- and multi-channel neural-mass EEG under grouped CV with
+  paired CIs. The SOTA Riemannian baseline is marginally better than band
+  power and ties the full spectral union. The remaining errors come from
+  runs whose dynamics do not express their label.
+
+### 8.7 Limits of the second benchmark
+
+* SW1PerS hyperparameters (M = 12, 160 points, 8-NN mean-shift, three fixed
+  scales plus the dominant period) were fixed from the literature and not
+  tuned. Other choices (H2 for tori, multivariate sliding windows across
+  channels, persistence images) were not tested. A different choice could
+  move SW1PerS by a few points, but a +0.05 gain *over band power* would
+  have to come from information the post hoc breakdown shows is not in the
+  signal.
+* The montage is a minimal network (4 columns, 6 sensors, Gaussian lead
+  field), not a head model with realistic sources, conductivities and
+  reference montages. Only 75 % of its epileptic foci actually spike (90 %
+  of single-column epileptic runs do). That caps every method's accuracy and
+  is the main reason no view can reach the GO margin on the montage.
+* The fair topology test that remains is a task whose classes have matched
+  spectra but different temporal organisation (e.g. a noisy limit cycle vs
+  linear narrowband noise with the same power spectrum; IAAFT surrogates).
+  There periodicity is the label, and SW1PerS should have an edge.
+  Likewise, a task with matched spectra and different coupling would favour
+  the Riemannian view (the unit test in `tests/test_riemann.py` is the
+  minimal example).
+
 ## References
 
+* Barachant A, Bonnet S, Congedo M, Jutten C (2012). Multiclass brain-computer interface classification by Riemannian geometry. *IEEE Trans Biomed Eng* 59:920-928.
+* Barachant A, Bonnet S, Congedo M, Jutten C (2013). Classification of covariance matrices using a Riemannian-based kernel for BCI applications. *Neurocomputing* 112:172-178.
+* Barachant A, et al. *pyRiemann: Biosignals classification with Riemannian geometry*. https://pyriemann.readthedocs.io
+* Bauer U (2021). Ripser: efficient computation of Vietoris-Rips persistence barcodes. *J Appl Comput Topol* 5:391-423.
 * Bevan MD, Magill PJ, Terman D, Bolam JP, Wilson CJ (2002). Move to the rhythm: oscillations in the subthalamic nucleus-external globus pallidus network. *Trends Neurosci* 25:525-531.
 * Blumenfeld H (2005). Cellular and network mechanisms of spike-wave seizures. *Epilepsia* 46(Suppl 9):21-33.
 * Breakspear M, Roberts JA, Terry JR, Rodrigues S, Mahant N, Robinson PA (2006). A unifying explanation of primary generalized seizures through nonlinear brain modeling and bifurcation analysis. *Cereb Cortex* 16:1296-1313.
 * Brown P, Oliviero A, Mazzone P, Insola A, Tonali P, Di Lazzaro V (2001). Dopamine dependency of oscillations between subthalamic nucleus and pallidum in Parkinson's disease. *J Neurosci* 21:1033-1038.
 * Bubenik P (2015). Statistical topological data analysis using persistence landscapes. *J Mach Learn Res* 16:77-102.
+* Chen Y, Wiesel A, Eldar YC, Hero AO (2010). Shrinkage algorithms for MMSE covariance estimation. *IEEE Trans Signal Process* 58:5016-5029.
+* Congedo M, Barachant A, Bhatia R (2017). Riemannian geometry for EEG-based brain-computer interfaces; a primer and a review. *Brain-Computer Interfaces* 4:155-174.
 * David O, Friston KJ (2003). A neural mass model for MEG/EEG: coupling and neuronal dynamics. *NeuroImage* 20:1743-1755.
 * Destexhe A (1998). Spike-and-wave oscillations based on the properties of GABA-B receptors. *J Neurosci* 18:9099-9111.
 * Edelsbrunner H, Harer J (2010). *Computational Topology: An Introduction*. American Mathematical Society.
@@ -343,20 +594,26 @@ temporal structure.
 * Little S, Brown P (2014). The functional role of beta oscillations in Parkinson's disease. *Parkinsonism Relat Disord* 20(Suppl 1):S44-S48.
 * Litvak V, Jha A, Eusebio A, Oostenveld R, Foltynie T, Limousin P, Zrinzo L, Hariz MI, Friston K, Brown P (2011). Resting oscillatory cortico-subthalamic connectivity in patients with Parkinson's disease. *Brain* 134:359-374.
 * Lopes da Silva FH, Hoeks A, Smits H, Zetterberg LH (1974). Model of brain rhythmic activity: the alpha-rhythm of the thalamus. *Kybernetik* 15:27-37.
+* Lotte F, Bougrain L, Cichocki A, Clerc M, Congedo M, Rakotomamonjy A, Yger F (2018). A review of classification algorithms for EEG-based brain-computer interfaces: a 10 year update. *J Neural Eng* 15:031005.
 * Mallet N, Pogosyan A, Márton LF, Bolam JP, Brown P, Magill PJ (2008). Parkinsonian beta oscillations in the external globus pallidus and their relationship with subthalamic nucleus activity. *J Neurosci* 28:14245-14258.
 * Pavlides A, Hogan SJ, Bogacz R (2015). Computational models describing possible mechanisms for generation of excessive beta oscillations in Parkinson's disease. *PLoS Comput Biol* 11:e1004609.
-* Perea JA, Harer J (2015). Sliding windows and persistence: an application of topological methods to signal analysis. *Found Comput Math* 15:799-838.
+* Perea JA, Deckard A, Haase SB, Harer J (2015). SW1PerS: Sliding windows and 1-persistence scoring; discovering periodicity in gene expression time series data. *BMC Bioinformatics* 16:257.
+* Perea JA, Harer J (2015). Sliding windows and persistence: an application of topological methods to signal analysis. *Found Comput Math* 15:799-838. arXiv:1307.6188.
 * Plenz D, Kitai ST (1999). A basal ganglia pacemaker formed by the subthalamic nucleus and external globus pallidus. *Nature* 400:677-682.
 * Rampil IJ (1998). A primer for EEG signal processing in anesthesia. *Anesthesiology* 89:980-1002.
 * Roberts DR, Bahn V, Ciuti S, et al. (2017). Cross-validation strategies for data with temporal, spatial, hierarchical, or phylogenetic structure. *Ecography* 40:913-929.
 * Roy Y, Banville H, Albuquerque I, Gramfort A, Falk TH, Faubert J (2019). Deep learning-based electroencephalography analysis: a systematic review. *J Neural Eng* 16:051001.
 * Schirrmeister RT, Springenberg JT, Fiederer LDJ, et al. (2017). Deep learning with convolutional neural networks for EEG decoding and visualization. *Hum Brain Mapp* 38:5391-5420.
+* Silberstein P, Pogosyan A, Kühn AA, et al. (2005). Cortico-cortical coupling in Parkinson's disease and its modulation by therapy. *Brain* 128:1277-1291.
 * Soikkeli R, Partanen J, Soininen H, Pääkkönen A, Riekkinen P Sr (1991). Slowing of EEG in Parkinson's disease. *Electroencephalogr Clin Neurophysiol* 79:159-165.
 * Takens F (1981). Detecting strange attractors in turbulence. In: *Dynamical Systems and Turbulence*, Lecture Notes in Mathematics 898:366-381.
 * Taylor PN, Baier G (2011). A spatially extended model for macroscopic spike-wave discharges. *J Comput Neurosci* 31:679-684.
 * The GUDHI Project (2015-). *GUDHI User and Reference Manual*. https://gudhi.inria.fr
+* Topaz CM, Ziegelmeier L, Halverson T (2015). Topological data analysis of biological aggregation models. *PLoS ONE* 10:e0126383.
 * Touboul J, Wendling F, Chauvel P, Faugeras O (2011). Neural mass activity, bifurcations, and epilepsy. *Neural Comput* 23:3232-3286.
-* Wendling F, Bellanger JJ, Bartolomei F, Chauvel P (2000). Relevance of nonlinear lumped-parameter models in the analysis of depth-EEG epileptic signals. *Biol Cybern* 83:367-378.
+* Tralie C, Saul N, Bar-On R (2018). Ripser.py: a lean persistent homology library for Python. *J Open Source Softw* 3(29):925.
+* Tralie CJ, Perea JA (2018). (Quasi)periodicity quantification in video data, using topology. *SIAM J Imaging Sci* 11:1049-1077.
 * Wendling F, Bartolomei F, Bellanger JJ, Chauvel P (2002). Epileptic fast activity can be explained by a model of impaired GABAergic dendritic inhibition. *Eur J Neurosci* 15:1499-1508.
+* Wendling F, Bellanger JJ, Bartolomei F, Chauvel P (2000). Relevance of nonlinear lumped-parameter models in the analysis of depth-EEG epileptic signals. *Biol Cybern* 83:367-378.
 * Williams D, Tijssen M, van Bruggen G, et al. (2002). Dopamine-dependent changes in the functional connectivity between basal ganglia and cerebral cortex in humans. *Brain* 125:1558-1569.
 * Wilson HR, Cowan JD (1972). Excitatory and inhibitory interactions in localized populations of model neurons. *Biophys J* 12:1-24.

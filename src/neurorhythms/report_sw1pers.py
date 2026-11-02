@@ -124,8 +124,9 @@ def write_report(R: dict, path: str, fig_dir: str) -> None:
       "channels in the five band-power bands (`riemann`) or of the broadband signal "
       "(`riemann_broadband`); tangent space at the Riemannian mean of the training fold "
       "(fitted inside every fold). With z-scored channels the diagonal of each band's "
-      "covariance is the channel's relative band power, so `riemann` contains the band-power "
-      "information and adds cross-channel coupling.")
+      "covariance is the channel's relative band power, so `riemann` contains the relative "
+      "band powers (and their ratios) and adds cross-channel coupling; it does not contain "
+      "the finer spectral shape of `bandpower` (peak frequency, spectral edge, entropy).")
     w("- **Existing views**: `bandpower` (relative band powers, ratios, SEF, peak frequency, "
       "spectral entropy), `baselines_union` (+ Hjorth, skewness/kurtosis/line length, "
       "log-PSD), `topo` (sublevel-set + Alpha-complex delay-embedding persistence) and "
@@ -198,6 +199,34 @@ def write_report(R: dict, path: str, fig_dir: str) -> None:
             for i, row in enumerate(M):
                 w(f"| {cls[i]} | " + " | ".join(f"{v:.3f}" for v in row) + " |")
             w("\n</details>\n")
+
+    if any(tr.get("post_hoc_signature_breakdown") for tr in T.values()):
+        w("## Post hoc: where are the errors? (exploratory, not part of the verdicts)\n")
+        w("Each run is classified, from its *noise-free* model output and without any "
+          "classifier, as showing its class signature or as *borderline*. Single track: the "
+          "criteria of the first benchmark (alpha-dominant / slow + skewed / beta ≥ 0.10). "
+          "Multi track: epileptic = some column spikes (slow fraction > 0.5 and skewness > "
+          "0.5), parkinsonian = some column has beta fraction ≥ 0.10, healthy = neither. "
+          "Window accuracy is then split by run type, using the out-of-fold predictions of "
+          "the main run (no re-training).\n")
+        for t, tr in T.items():
+            b = tr.get("post_hoc_signature_breakdown")
+            if not b:
+                continue
+            nb = b["n_runs_borderline"]
+            w(f"**{t}-channel track**: borderline runs per class "
+              + ", ".join(f"{c} {n} of {n + h}" for c, n, h in
+                          zip(cls, nb, b["n_runs_signature_holds"])) + ".\n")
+            border_cls = [c for c, n in zip(cls, nb) if n]
+            w("| feature set | acc, runs with signature | acc, borderline runs | "
+              + " | ".join(f"borderline {c} recall" for c in border_cls) + " |")
+            w("|---|---|---|" + "---|" * len(border_cls))
+            for s_, r in b["sets"].items():
+                ab = "–" if r["acc_borderline_runs"] is None else f"{r['acc_borderline_runs']:.3f}"
+                w(f"| {s_} | {r['acc_signature_runs']:.3f} | {ab} | "
+                  + " | ".join(f"{r['borderline_recall'].get(c, float('nan')):.3f}"
+                               for c in border_cls) + " |")
+            w("")
 
     if any(tr.get("importance") for tr in T.values()):
         w("## Which feature families does the `union` model rely on?\n")

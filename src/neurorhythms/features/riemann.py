@@ -13,9 +13,12 @@ robust EEG classifiers):
    ``Covariances(estimator="oas")``) so every matrix is well conditioned.
    Because every channel of a window is z-scored, the *diagonal* of a band's
    covariance is that channel's band power as a fraction of its total
-   variance, i.e. exactly the relative band powers of the band-power
-   baseline. The *off-diagonal* terms add band-limited cross-channel coupling.
-   This baseline therefore subsumes band power and adds coupling.
+   variance, i.e. the relative band powers of the band-power baseline (and
+   hence their log-ratios). The *off-diagonal* terms add band-limited
+   cross-channel coupling. This baseline therefore subsumes the relative band
+   powers and adds coupling; with five bands it does not carry the finer
+   spectral shape of the band-power view (peak frequency, spectral edge
+   frequencies, spectral entropy).
 3. **Tangent space.** The matrices of each band are mapped to the tangent
    space at their Riemannian (affine-invariant) mean (``TangentSpace(metric=
    "riemann")``), which turns the curved SPD manifold into a Euclidean vector

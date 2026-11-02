@@ -396,12 +396,13 @@ def evaluate_track(cfg, track: str) -> tuple[dict, object, object]:
         dataset_info["source_signatures"] = network_signatures(raw)
     result = {"dataset": dataset_info, "summary": summary, "comparisons": comparisons,
               "best_classical": best_classical, "sanity": sanity, "importance": importance,
-              "confusion": {s: confusion(preds[s], ds.y).tolist() for s in conf_sets}}
+              "confusion": {s: confusion(preds[s], ds.y).tolist() for s in conf_sets},
+              "post_hoc_signature_breakdown": signature_breakdown(
+                  signature_holds(raw, track), ds.y, ds.groups, preds)}
     return result, ds, preds
 
 
-def network_signatures(raw: RawNetworkRuns) -> dict:
-    """Descriptive, classifier-free check of the noise-free column outputs."""
+def _network_signature_parts(raw: RawNetworkRuns):
     from .signatures import run_signatures
     n, c, t = raw.src.shape
     sig = run_signatures(raw.src.reshape(n * c, t), raw.fs)
@@ -409,6 +410,13 @@ def network_signatures(raw: RawNetworkRuns) -> dict:
     beta = sig["beta (13-30 Hz)"].reshape(n, c)
     sk = sig["skewness"].reshape(n, c)
     spiking = (slow > 0.5) & (sk > 0.5)                 # epileptic column signature
+    return beta, spiking
+
+
+def network_signatures(raw: RawNetworkRuns) -> dict:
+    """Descriptive, classifier-free check of the noise-free column outputs."""
+    beta, spiking = _network_signature_parts(raw)
+    n, c = beta.shape
     focus = np.asarray(raw.meta.get("focus", np.zeros((n, c), bool)), bool)
     out = {}
     for ci, cls in enumerate(CLASSES):
@@ -420,6 +428,51 @@ def network_signatures(raw: RawNetworkRuns) -> dict:
         if cls == "epileptic":
             row["fraction_focus_columns_spiking"] = float(np.mean(spiking[sel][focus[sel]]))
         out[cls] = row
+    return out
+
+
+def signature_holds(raw, track: str) -> np.ndarray:
+    """Per run: does the noise-free model output show its own class signature?
+
+    single: the criteria of ``signatures.CRITERIA``; multi: epileptic = some
+    column spikes, parkinsonian = some column has beta fraction >= 0.10,
+    healthy = neither.
+    """
+    if track == "single":
+        from .signatures import run_signature_holds
+        return run_signature_holds(raw.eeg, raw.label, raw.fs, CLASSES)
+    beta, spiking = _network_signature_parts(raw)
+    sp, bt = spiking.any(1), (beta >= 0.10).any(1)
+    lab = np.asarray(raw.label)
+    return np.where(lab == 0, ~sp & ~bt, np.where(lab == 1, sp, bt))
+
+
+BREAKDOWN_SETS = ("bandpower", "baselines_union", "descriptor", "sw1pers", "bandpower+sw1pers",
+                  "riemann", "riemann+sw1pers", "union", "cnn")
+
+
+def signature_breakdown(holds_run: np.ndarray, y, groups, preds: dict) -> dict:
+    """Post hoc: accuracy on runs that show their class signature vs borderline runs."""
+    y, groups = np.asarray(y), np.asarray(groups)
+    hw = np.asarray(holds_run, bool)[groups]
+    run_lab = np.zeros(len(holds_run), dtype=int)
+    run_lab[groups] = y
+    out = {"n_runs_signature_holds": [int(np.sum(holds_run & (run_lab == c))) for c in range(3)],
+           "n_runs_borderline": [int(np.sum(~holds_run & (run_lab == c))) for c in range(3)],
+           "sets": {}}
+    for s in BREAKDOWN_SETS:
+        if s not in preds:
+            continue
+        P = np.atleast_2d(preds[s])
+        ok = P == y[None, :]
+        row = {"acc_signature_runs": float(ok[:, hw].mean()),
+               "acc_borderline_runs": float(ok[:, ~hw].mean()) if (~hw).any() else None,
+               "borderline_recall": {}}
+        for c, cls in enumerate(CLASSES):
+            m = ~hw & (y == c)
+            if m.any():
+                row["borderline_recall"][cls] = float(ok[:, m].mean())
+        out["sets"][s] = row
     return out
 
 
@@ -566,7 +619,21 @@ def replot(cfg: dict) -> None:
         results = json.load(fh)
     results["config"]["outputs"] = cfg["outputs"]
     rc = {**results["config"], "cache_dir": cfg.get("cache_dir")}
-    datasets = {t: get_dataset(rc, t)[1] for t in results["tracks"]}
+    datasets, changed = {}, False
+    oof = os.path.join(cfg["outputs"]["out_dir"], "oof_predictions.npz")
+    for t, tr in results["tracks"].items():
+        raw, datasets[t] = get_dataset(rc, t)
+        if "post_hoc_signature_breakdown" not in tr and os.path.exists(oof):
+            z = np.load(oof, allow_pickle=False)
+            pre = f"{t}_"
+            preds = {k[len(pre):]: z[k] for k in z.files
+                     if k.startswith(pre) and k not in (f"{t}_y", f"{t}_groups")}
+            tr["post_hoc_signature_breakdown"] = signature_breakdown(
+                signature_holds(raw, t), z[f"{t}_y"], z[f"{t}_groups"], preds)
+            changed = True
+    if changed:
+        with open(os.path.join(cfg["outputs"]["out_dir"], "results.json"), "w") as fh:
+            json.dump(results, fh, indent=1, default=_json_default)
     render(results, datasets)
 
 

@@ -33,16 +33,25 @@ def run_signatures(eeg: np.ndarray, fs: float) -> dict:
     return out
 
 
-def signature_table(eeg: np.ndarray, label: np.ndarray, fs: float, classes) -> dict:
-    sig = run_signatures(eeg, fs)
-    bands = list(BANDS)
-    rel = np.column_stack([sig[b] for b in bands])
+def _holds(sig: dict) -> dict:
+    rel = np.column_stack([sig[b] for b in BANDS])
     dom = np.argmax(rel, axis=1)
-    holds = {
+    return {
         "healthy": dom == 1,
         "epileptic": (dom == 0) & (sig["skewness"] > 0.5),
         "parkinsonian": sig["beta (13-30 Hz)"] >= 0.10,
     }
+
+
+def run_signature_holds(eeg: np.ndarray, label: np.ndarray, fs: float, classes) -> np.ndarray:
+    """Per run: does the run show the signature of *its own* class (CRITERIA)?"""
+    holds = _holds(run_signatures(eeg, fs))
+    return np.array([holds[classes[c]][i] for i, c in enumerate(np.asarray(label))])
+
+
+def signature_table(eeg: np.ndarray, label: np.ndarray, fs: float, classes) -> dict:
+    sig = run_signatures(eeg, fs)
+    holds = _holds(sig)
     table = {}
     for ci, cls in enumerate(classes):
         sel = label == ci
