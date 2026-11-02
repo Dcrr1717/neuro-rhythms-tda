@@ -100,8 +100,9 @@ Hammond, Bergman & Brown 2007; Little & Brown 2014). The code
 (`regimes.stn_gpe_hopf`) solves this equation numerically for every run, so
 the loop gain is set *relative to that run's own threshold*. The analytic
 threshold matches simulation (tested in `tests/test_neural_mass.py`), and
-the predicted onset frequency of the parkinsonian runs is 14-30 Hz, rising
-with GPe self-inhibition and falling with longer delays.
+the predicted onset frequency of the parkinsonian runs of the full
+configuration is 17-27 Hz, rising with GPe self-inhibition and falling with
+longer delays.
 
 ### 2.3 Coupling and measurement
 
@@ -126,7 +127,7 @@ classifier: they must use waveform shape and spectrum.
 |---|---|---|---|---|
 | **healthy** | `A` in [3.10, 3.40] mV, `p` in [190, 300] /s | loop gain 0.4-0.9 x Hopf threshold (damped, noise-driven) | ~10 Hz alpha, weak broadband beta | Jansen & Rit 1995; David & Friston 2003 |
 | **epileptic** | `A` in [3.60, 4.20] mV, `p` in [90, 160] /s | as healthy | sharp positive spikes + slow wave at 2-6 Hz; sporadic to rhythmic | Wendling et al. 2000, 2002; Grimbert & Faugeras 2006; Touboul et al. 2011 |
-| **parkinsonian** | as healthy | loop gain 1.05-1.8 x Hopf threshold (sustained oscillation) | alpha plus a beta peak (14-30 Hz) | Holgado et al. 2010; Pavlides et al. 2015; Brown et al. 2001; Litvak et al. 2011 |
+| **parkinsonian** | as healthy | loop gain 1.05-1.8 x Hopf threshold (sustained oscillation) | alpha plus a beta peak (17-27 Hz in the full run) | Holgado et al. 2010; Pavlides et al. 2015; Brown et al. 2001; Litvak et al. 2011 |
 
 Shared nuisance parameters drawn per run in every class: `B` 21.5-22.5 mV,
 `a` 95-105 /s, `b` 49-55 /s, `C` 130-140, input noise std 45-70 (Jansen &
@@ -142,7 +143,14 @@ full configuration. One iteration was needed: the first draft let `a` and `b`
 vary by ±10 % and used a BG->cortex gain of 0.5-2, which produced spiking
 "healthy" runs and parkinsonian runs without a visible beta peak; the
 ranges were tightened until the signatures in the table held for the large
-majority of runs.
+majority of runs. In the full run (noise-free model output, criteria in
+`RESULTS.md`): 99 % of healthy runs are alpha-dominated, 90 % of epileptic
+runs are dominated by slow, positively skewed spike activity and 86 % of
+parkinsonian runs carry at least 10 % of their power in the beta band. The
+remainder are borderline runs (epileptic columns close to the alpha/spike
+boundary, parkinsonian loops with weak beta transfer to the cortex). They were
+kept, because real recordings have such cases too, and they are where most
+classification errors occur.
 
 ## 4. What each feature measures
 
@@ -216,8 +224,74 @@ al. 2017; Roy et al. 2019).
 
 ## 6. What the benchmark found
 
-See [`RESULTS.md`](RESULTS.md) for every number; the short version is
-written there in the *Verdict* section and summarised in the README.
+Full configuration: 240 runs (80 per class), 2400 windows, 4 folds x 5
+repeats grouped by run, 2000 group-bootstrap resamples. All numbers are
+window-level accuracy (chance = 0.333); every one is in
+[`RESULTS.md`](RESULTS.md).
+
+1. **Verdict: NO-GO, under every reading of the rule.**
+   * *As briefed*, the topological-spectral descriptor (PSD + topology,
+     0.943) is slightly *below* the best band-power baseline (0.955):
+     margin -0.012 [95 % CI -0.027, +0.002].
+   * *Strict*: all non-topological features together reach 0.962, so the
+     largest margin any feature set could reach is 0.038, less than the
+     +0.05 GO margin. The best topology-containing set (baselines plus the
+     80 persistence summaries) ties the baselines: -0.002 [-0.012, +0.008].
+   * *Incremental*: adding the full 464-dimensional topological vector to
+     the baselines *lowers* accuracy by -0.010 [-0.018, -0.004]; adding it
+     to band power + Hjorth lowers it by -0.014 [-0.027, -0.004]. The extra
+     dimensions bring variance but no new information.
+2. **Topology does see the rhythms, just less completely than the
+   spectrum.** On its own the topological view reaches 0.924 (0.931 with
+   the 80 summary statistics only), far above chance, but 0.037 below the
+   log-PSD alone (CI -0.058, -0.019). Persistence of the sublevel sets
+   encodes peak prominences (spikes); persistence of the delay embedding
+   encodes the size and regularity of the oscillation loop. Both are largely
+   functions of the power spectrum and the amplitude distribution, which
+   the baselines already measure.
+3. **Where the errors are.** The band-power and union models both confuse
+   6 % of epileptic windows with healthy ones and 4 % of parkinsonian
+   windows with healthy ones. These are the borderline runs of section 3: epileptic
+   columns near the alpha/spike boundary that spike only sporadically, and
+   parkinsonian runs with a weak cortical beta peak.
+4. **The 1D-CNN ties the best features** (0.966, +0.004 [-0.009, +0.018]
+   vs all baselines) and has the best epileptic recall (0.97, vs 0.93-0.94
+   for the band-power and union models).
+   It catches isolated spikes that window-averaged spectral features dilute.
+   It is, however, less robust to measurement noise (below).
+5. **Noise does not rescue topology (exploratory, post hoc).** Multiplying
+   the measurement noise by 2 and 4 hurts the topological view most
+   (0.924 -> 0.889 -> 0.740) and the full baseline union least
+   (0.962 -> 0.943 -> 0.903); the CNN falls to 0.885 at x4. The descriptor
+   and the union stay 1-2 points *below* the baseline union at every noise
+   level (CIs below 0 or touching it). At x4 the descriptor (0.882) is above
+   the brief-named band-power + Hjorth baseline (0.861), but it shares its
+   PSD block with the baseline union, which is higher still; the sweep did
+   not evaluate the PSD alone, so that gap cannot be attributed to topology.
+   Unlike the multi-scale filtration of the GEM study, our filtrations do no
+   internal smoothing, a likely reason why noise hurts them more.
+6. **Which features carry the signal.** Scrambling the band powers costs the
+   union model 0.17 accuracy (both classifiers). A random forest loses only
+   0.027 when the sublevel-set topology is scrambled and nothing when the
+   delay-embedding families are scrambled, so the information they hold is
+   redundant with the spectrum. (The logistic regression loses 0.07 per
+   topological family, but that measures how much weight it spread over
+   correlated features, not unique information.)
+7. **The leak detectors pass.** With permuted run labels the union scores
+   0.340 (chance). Ignoring the run grouping would have inflated accuracy
+   (baseline union 0.964 -> 0.984, topology 0.925 -> 0.937), which is why
+   every reported number uses grouped folds.
+
+**Bottom line.** For single-channel rhythms whose defining features are
+spectral (an alpha peak, a beta peak, slow spike-and-wave activity), a
+topological description of the trace re-encodes information that a
+well-built spectral feature set already has. It is a faithful
+representation, but it is not a better one, and it degrades faster with
+noise. This matches the GEM geophysical-flow benchmark. A fair next test
+for topology would be a task where spectra are matched by construction, as
+in GEM's IAAFT-surrogate design: for example, healthy vs epileptic windows
+with identical power spectra and amplitude distributions but different
+temporal structure.
 
 ## 7. What this can and cannot tell you
 

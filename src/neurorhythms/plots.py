@@ -194,9 +194,9 @@ def confusion_panels(mats: dict, classes, path):
                 a.text(j, i, f"{M[i, j]:.2f}", ha="center", va="center", fontsize=9,
                        color="white" if M[i, j] > 0.6 else INK)
         a.set_xticks(range(len(classes)))
-        a.set_xticklabels([c[:5] for c in classes])
+        a.set_xticklabels(classes, fontsize=8)
         a.set_yticks(range(len(classes)))
-        a.set_yticklabels([c[:5] for c in classes])
+        a.set_yticklabels(classes, fontsize=8, rotation=90, va="center")
         a.set_xlabel("predicted")
         a.set_ylabel("true")
         a.set_title(title, fontsize=9)

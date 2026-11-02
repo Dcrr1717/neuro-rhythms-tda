@@ -9,7 +9,40 @@ topology adds value over band-power baselines.
 
 Everything is synthetic and runs offline: no external data, no API keys.
 
-<!-- HEADLINE -->
+## Result (full run): NO-GO
+
+**Topology does not add value over band-power baselines on this task.**
+Setup: 240 simulation runs, 2400 four-second windows, StratifiedGroupKFold
+(4 folds x 5 repeats) grouped by run, and paired group-bootstrap 95 % CIs.
+The GO rule is the GEM rule: margin >= +0.05 accuracy.
+
+| question | candidate | reference | margin [95% CI] | verdict |
+|---|---|---|---|---|
+| as briefed | topological-spectral descriptor, 0.943 | band power, 0.955 | -0.012 [-0.027, +0.002] | **NO-GO** |
+| strict | best topology-containing set, 0.959 | all non-topological features, 0.962 | -0.002 [-0.012, +0.008] | **NO-GO** (headroom 0.038 < 0.05) |
+| incremental | all features incl. topology, 0.951 | all non-topological features, 0.962 | -0.010 [-0.018, -0.004] | **NO-GO** (topology hurts slightly) |
+| deep model | 1D-CNN on raw signal, 0.966 | all non-topological features, 0.962 | +0.004 [-0.009, +0.018] | tie |
+
+- **Topology carries the information, but less of it than the spectrum.** The
+  topological view alone reaches 0.924 (chance 0.333). That is 0.037 below
+  the plain log-PSD.
+- **It is the least noise-robust view.** In an exploratory noise sweep it
+  falls to 0.740 at 4x measurement noise; the baseline union holds 0.903.
+- **The leak detectors pass.** Permuted labels give 0.340. Ignoring the run
+  grouping would have inflated accuracy by up to 2 points.
+- **What is left is borderline cases.** About 10 % of epileptic and 14 % of
+  parkinsonian runs sit near their bifurcation boundaries and look partly
+  healthy. That is where the errors are.
+
+Full tables: [`docs/RESULTS.md`](docs/RESULTS.md). Interpretation for
+neuroscientists: [`docs/SCIENCE.md`](docs/SCIENCE.md) section 6.
+
+![Example window, spectrum, delay embedding and persistence diagrams per class](figures/example_traces.png)
+
+| accuracy of every view | margins vs baselines |
+|---|---|
+| ![accuracy](figures/accuracy_bars.png) | ![margins](figures/margins.png) |
+| ![confusion](figures/confusion_matrix.png) | ![importance](figures/feature_importance.png) |
 
 ## How it works
 

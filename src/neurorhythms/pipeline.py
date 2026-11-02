@@ -376,6 +376,18 @@ def run(cfg: dict) -> dict:
     return results
 
 
+def unique_comparisons(comparisons: dict) -> list:
+    """Comparison rows without duplicates (e.g. 'best strict baseline' may resolve to
+    baselines_union, which is also compared explicitly)."""
+    seen, out = set(), []
+    for v in comparisons.values():
+        key = (v["candidate"], v["reference"])
+        if key not in seen:
+            seen.add(key)
+            out.append(v)
+    return out
+
+
 def render(results: dict, ds) -> None:
     """Figures + Markdown report from a results dict (also used by ``--replot``)."""
     from .report import write_report
@@ -388,7 +400,7 @@ def render(results: dict, ds) -> None:
                          os.path.join(fig_dir, "example_traces.png"), seed=cfg["seed"])
     plots.accuracy_bars(summary, "baselines_union", go, os.path.join(fig_dir, "accuracy_bars.png"))
     rows = [(f"{v['candidate']}  vs  {v['reference']}", v["margin"], v["ci95"])
-            for v in comparisons.values()]
+            for v in unique_comparisons(comparisons)]
     plots.margin_forest(rows, go, os.path.join(fig_dir, "margins.png"))
     bb = results["gonogo"]["as_briefed"]["best_brief_baseline"]
     mats = {f"best brief baseline: {bb} ({summary[bb]['best_classifier']})":

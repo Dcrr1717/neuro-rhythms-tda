@@ -156,7 +156,8 @@ def write_report(R: dict, path: str, fig_dir: str) -> None:
     w("## Paired comparisons\n")
     w("| candidate | reference | candidate acc | reference acc | margin [95% CI] | P(margin <= 0) | rule |")
     w("|---|---|---|---|---|---|---|")
-    for k, c in C.items():
+    from .pipeline import unique_comparisons
+    for c in unique_comparisons(C):
         w(f"| {c['candidate']} | {c['reference']} | {c['candidate_accuracy']:.3f} | "
           f"{c['reference_accuracy']:.3f} | {_m(c['margin'])} {_mci(c['ci95'])} | "
           f"{c['p_le_0']:.3f} | {c['verdict']} |")
@@ -192,6 +193,11 @@ def write_report(R: dict, path: str, fig_dir: str) -> None:
             w(f"| {f} | {imp[models[0]]['n_features'][f]} | "
               + " | ".join(f"{imp[m]['mean_drop'][f]:+.3f}" for m in models) + " |")
         w("")
+        w("Permutation importance measures how much a *fitted* model relies on a family, "
+          "not how much unique information the family carries: a linear model that spreads "
+          "weight over redundant families loses accuracy when any one of them is scrambled, "
+          "while a random forest can route around it. Compare the two columns with that in "
+          "mind.\n")
         w(f"![importance]({rel}/feature_importance.png)\n")
 
     if R.get("sanity"):
