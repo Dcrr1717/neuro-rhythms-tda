@@ -1,0 +1,44 @@
+# Small default configuration: runs offline in ~1.5 min on 4 CPU cores (used by CI).
+# Too few runs for conclusions: the CIs are wide. Use configs/full.yaml for the reported results.
+name: small
+seed: 0
+n_jobs: 4
+cache_dir: data/cache
+
+simulation:
+  runs_per_class: 12        # independent simulation runs (virtual subjects) per class
+  duration: 24.0            # seconds kept per run (after the transient)
+  fs: 250.0                 # output sampling rate (Hz)
+  dt: 0.0005                # Euler-Maruyama step (s)
+  transient: 2.0            # discarded initial segment (s)
+
+measurement:
+  window: 4.0               # non-overlapping windows (s); 6 windows per run
+  pink_level: [0.2, 0.8]    # 1/f background noise std, relative to the z-scored model output
+  white_level: [0.05, 0.2]  # white sensor noise std
+
+topology: {}                # TopoConfig defaults (src/neurorhythms/features/topology.py)
+
+evaluation:
+  n_splits: 4               # StratifiedGroupKFold, group = simulation run
+  n_repeats: 1
+  bootstrap: 500            # group-bootstrap resamples for CIs
+  rf_trees: 200
+  go_margin: 0.05           # GO iff candidate - reference >= +0.05 accuracy (GEM rule)
+
+cnn:
+  enabled: true
+  epochs: 10
+  batch_size: 64
+  lr: 0.001
+  weight_decay: 0.0001
+  width: 16
+
+sanity: {enabled: true}
+importance: {enabled: true, n_permutations: 3}
+noise_sweep: {enabled: false}
+
+outputs:
+  out_dir: results/small
+  figures_dir: results/small/figures
+  results_md: null          # -> results/small/RESULTS.md

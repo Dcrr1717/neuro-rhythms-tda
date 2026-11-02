@@ -1,2 +1,111 @@
 # neuro-rhythms-tda
-Classifying healthy vs epileptic vs parkinsonian brain rhythms from neural-mass EEG with a topological-spectral descriptor + deep learning.
+
+Classifying **healthy vs epileptic vs parkinsonian** brain rhythms simulated
+with neural mass models, using a **topological-spectral descriptor**
+(persistent homology + power spectrum, computed with GUDHI), strong
+non-topological baselines and a small **1D-CNN**, all under cross-validation
+grouped by simulation run. The goal is an honest Go/No-Go verdict on whether
+topology adds value over band-power baselines.
+
+Everything is synthetic and runs offline: no external data, no API keys.
+
+## Result (full run): NO-GO
+
+**Topology does not add value over band-power baselines on this task.**
+Setup: 240 simulation runs, 2400 four-second windows, StratifiedGroupKFold
+(4 folds x 5 repeats) grouped by run, and paired group-bootstrap 95 % CIs.
+The GO rule is the GEM rule: margin >= +0.05 accuracy.
+
+| question | candidate | reference | margin [95% CI] | verdict |
+|---|---|---|---|---|
+| as briefed | topological-spectral descriptor, 0.943 | band power, 0.955 | -0.012 [-0.027, +0.002] | **NO-GO** |
+| strict | best topology-containing set, 0.959 | all non-topological features, 0.962 | -0.002 [-0.012, +0.008] | **NO-GO** (headroom 0.038 < 0.05) |
+| incremental | all features incl. topology, 0.951 | all non-topological features, 0.962 | -0.010 [-0.018, -0.004] | **NO-GO** (topology hurts slightly) |
+| deep model | 1D-CNN on raw signal, 0.966 | all non-topological features, 0.962 | +0.004 [-0.009, +0.018] | tie |
+
+- **Topology carries the information, but less of it than the spectrum.** The
+  topological view alone reaches 0.924 (chance 0.333). That is 0.037 below
+  the plain log-PSD.
+- **It is the least noise-robust view.** In an exploratory noise sweep it
+  falls to 0.740 at 4x measurement noise; the baseline union holds 0.903.
+- **The leak detectors pass.** Permuted labels give 0.340. Ignoring the run
+  grouping would have inflated accuracy by up to 2 points.
+- **What is left is borderline cases.** About 10 % of epileptic and 14 % of
+  parkinsonian runs sit near their bifurcation boundaries and look partly
+  healthy. That is where the errors are.
+
+Full tables: [`docs/RESULTS.md`](docs/RESULTS.md). Interpretation for
+neuroscientists: [`docs/SCIENCE.md`](docs/SCIENCE.md) section 6.
+
+![Example window, spectrum, delay embedding and persistence diagrams per class](figures/example_traces.png)
+
+| accuracy of every view | margins vs baselines |
+|---|---|
+| ![accuracy](figures/accuracy_bars.png) | ![margins](figures/margins.png) |
+| ![confusion](figures/confusion_matrix.png) | ![importance](figures/feature_importance.png) |
+
+## How it works
+
+```
+ per class, per run:  draw parameters  ->  coupled Jansen-Rit column + STN-GPe loop  ->  "EEG"
+                                            (Euler-Maruyama, dt = 0.5 ms, 250 Hz)
+ measurement:         z-score + 1/f noise + white noise -> 0.5 Hz high-pass -> 4 s windows -> z-score
+ features:            bandpower | hjorth | waveform | psd | topo (GUDHI)  -> feature sets and unions
+ models:              LogReg, RandomForest (best of two per set) | 1D-CNN on raw windows
+ evaluation:          repeated StratifiedGroupKFold (group = run), paired group-bootstrap CIs,
+                      GO iff margin >= +0.05 accuracy (GEM rule)
+```
+
+| class | signature | how it is produced |
+|---|---|---|
+| healthy | ~10 Hz alpha | Jansen-Rit standard regime; basal-ganglia loop below its Hopf threshold |
+| epileptic | 2-6 Hz spike-and-slow-wave | raised excitatory gain `A`, lower input (Wendling et al. 2000/2002) |
+| parkinsonian | alpha + 14-30 Hz beta | STN-GPe loop gain above the analytic Hopf threshold (Holgado et al. 2010), routed to the column |
+
+Details, equations, parameter ranges and references: [`docs/SCIENCE.md`](docs/SCIENCE.md).
+
+## Repository layout
+
+```
+src/neurorhythms/
+  neural_mass.py      Jansen-Rit + STN-GPe model, vectorised over runs
+  regimes.py          class parameter regimes, analytic Hopf threshold of the STN-GPe loop
+  dataset.py          simulation runs -> measurement model -> windows (+ run ids)
+  signatures.py       descriptive check that each class shows its signature
+  features/
+    baseline.py       band powers, ratios, SEF, Hjorth, waveform stats, log-PSD
+    topology.py       GUDHI sublevel-set + delay-embedding (Alpha) persistence, vectorisations
+    __init__.py       feature sets: baselines, topo, descriptor, unions
+  classical.py        grouped folds, LogReg / RandomForest cross-validation
+  deep.py             1D-CNN (PyTorch) on the same folds
+  stats.py            accuracy, group bootstrap, paired margins, Go/No-Go rule
+  importance.py       feature-family permutation importance
+  plots.py, report.py figures and the generated Markdown report
+  pipeline.py         end-to-end CLI (python -m neurorhythms)
+configs/small.yaml    default, ~1.5 min (CI)
+configs/full.yaml     reported run, ~1 h on 4 cores
+docs/RESULTS.md       generated by the full run (do not edit by hand)
+docs/SCIENCE.md       background for neuroscientists, with references
+figures/              figures of the full run
+results/full/         results.json of the full run
+tests/                pytest suite (offline)
+```
+
+## Reproduce
+
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cpu   # for the CNN (optional)
+pip install -e ".[dev]"
+pytest -q                                          # 32 tests, offline, ~1 min
+python -m neurorhythms                             # small default config -> results/small/
+python -m neurorhythms --config configs/full.yaml  # full run -> results/full/, figures/, docs/RESULTS.md
+python -m neurorhythms --config configs/full.yaml --replot   # re-render figures + report only
+```
+
+Without PyTorch, pass `--no-cnn`. Simulations and features are cached in
+`data/cache/` (keyed by a hash of the configuration); `--no-cache` disables it.
+All randomness is seeded.
+
+## License
+
+MIT, Copyright (c) 2026 Cesar Daniel Reinoso. See [`LICENSE`](LICENSE).
