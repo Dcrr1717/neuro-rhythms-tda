@@ -33,7 +33,7 @@ jobs:
       - name: Small default benchmark (offline, ~2 min)
         if: matrix.python-version == '3.12'
         run: python -m neurorhythms --config configs/small.yaml --no-cache
-      - name: Small SW1PerS + Riemannian benchmark (offline, single + multi-channel, ~6 min)
+      - name: Small SW1PerS + Riemannian benchmark (offline, single + multi-channel, ~5-10 min)
         if: matrix.python-version == '3.12'
         run: python -m neurorhythms.sw1pers_bench --config configs/sw1pers_small.yaml --no-cache
       - name: Upload small-run reports
