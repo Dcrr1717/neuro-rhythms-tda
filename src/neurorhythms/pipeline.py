@@ -185,7 +185,6 @@ def run(cfg: dict) -> dict:
     t_start = time.time()
     ev = cfg["evaluation"]
     out_dir = cfg["outputs"]["out_dir"]
-    cfg["outputs"]["figures_dir"]
     os.makedirs(out_dir, exist_ok=True)
     seed, n_boot, go = cfg["seed"], ev["bootstrap"], ev["go_margin"]
 
