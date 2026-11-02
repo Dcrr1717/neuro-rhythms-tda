@@ -6,6 +6,10 @@ Architecture (about 50 k parameters):
     Conv1d(64, 64, k=7) -> BatchNorm -> ReLU -> global average pooling
     Dropout(0.3) -> Linear(64, 3)
 
+Multi-channel windows (n, n_channels, n_samples) are handled by giving the first
+convolution ``n_channels`` input channels (it then learns spatial filters as
+well); single-channel windows (n, n_samples) give exactly the original model.
+
 Training: AdamW, cross-entropy, a *fixed* number of epochs (no early stopping
 on the test fold, so nothing is selected on held-out data). It runs on the
 same grouped folds as the classical models.
@@ -25,7 +29,8 @@ def _torch():
     return torch
 
 
-def build_cnn(n_classes: int = 3, width: int = 16, kernel: int = 7, dropout: float = 0.3):
+def build_cnn(n_classes: int = 3, width: int = 16, kernel: int = 7, dropout: float = 0.3,
+              in_channels: int = 1):
     torch = _torch()
     nn = torch.nn
     c1, c2, c3 = width, 2 * width, 4 * width
@@ -37,25 +42,34 @@ def build_cnn(n_classes: int = 3, width: int = 16, kernel: int = 7, dropout: flo
             layers.append(nn.MaxPool1d(2))
         return layers
 
-    return nn.Sequential(*block(1, c1), *block(c1, c2), *block(c2, c3), *block(c3, c3, pool=False),
+    return nn.Sequential(*block(in_channels, c1), *block(c1, c2), *block(c2, c3),
+                         *block(c3, c3, pool=False),
                          nn.AdaptiveAvgPool1d(1), nn.Flatten(), nn.Dropout(dropout),
                          nn.Linear(c3, n_classes))
+
+
+def _as_channels(X) -> np.ndarray:
+    """(n, n_samples) -> (n, 1, n_samples); (n, c, n_samples) unchanged."""
+    X = np.asarray(X, dtype=np.float32)
+    return X[:, None, :] if X.ndim == 2 else X
 
 
 def train_predict(Xtr, ytr, Xte, epochs: int = 30, batch_size: int = 64, lr: float = 1e-3,
                   weight_decay: float = 1e-4, width: int = 16, seed: int = 0,
                   n_classes: int = 3, threads: int | None = None) -> np.ndarray:
-    """Train a fresh CNN on (Xtr, ytr) and return class probabilities for Xte."""
+    """Train a fresh CNN on (Xtr, ytr) and return class probabilities for Xte.
+
+    X arrays are (n, n_samples) or (n, n_channels, n_samples)."""
     torch = _torch()
     if threads:
         torch.set_num_threads(threads)
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
-    model = build_cnn(n_classes, width)
+    xt = torch.as_tensor(_as_channels(Xtr))
+    model = build_cnn(n_classes, width, in_channels=int(xt.shape[1]))
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(1, epochs))
     loss_fn = torch.nn.CrossEntropyLoss()
-    xt = torch.as_tensor(np.asarray(Xtr, dtype=np.float32)[:, None, :])
     yt = torch.as_tensor(np.asarray(ytr, dtype=np.int64))
     n = len(yt)
     for _ in range(epochs):
@@ -71,7 +85,7 @@ def train_predict(Xtr, ytr, Xte, epochs: int = 30, batch_size: int = 64, lr: flo
             opt.step()
         sched.step()
     model.eval()
-    xe = torch.as_tensor(np.asarray(Xte, dtype=np.float32)[:, None, :])
+    xe = torch.as_tensor(_as_channels(Xte))
     out = []
     with torch.no_grad():
         for s in range(0, len(xe), 512):
@@ -98,5 +112,5 @@ def cross_validate_cnn(X, y, folds, seed: int = 0, n_classes: int = 3, **train_k
     return {"pred": pred, "proba": proba, "fold_acc": fold_acc, "seconds": time.time() - t0}
 
 
-def n_parameters(width: int = 16) -> int:
-    return int(sum(p.numel() for p in build_cnn(width=width).parameters()))
+def n_parameters(width: int = 16, in_channels: int = 1) -> int:
+    return int(sum(p.numel() for p in build_cnn(width=width, in_channels=in_channels).parameters()))

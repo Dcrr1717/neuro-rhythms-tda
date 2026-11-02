@@ -165,3 +165,73 @@ def concat_params(parts: list[RunParams]) -> RunParams:
     """Concatenate several RunParams along the run axis."""
     keys = parts[0].__dict__.keys()
     return RunParams(**{k: np.concatenate([np.asarray(getattr(p, k)) for p in parts]) for k in keys})
+
+
+# --------------------------------------------------------------------------
+# Multi-channel network (see network.py)
+# --------------------------------------------------------------------------
+# Network-level ranges. They are identical for the three classes (nuisance);
+# the class is still defined only by the per-column (A, p_mean) ranges and the
+# relative basal-ganglia loop gain of DEFAULT_REGIMES.
+NETWORK_REGIMES: dict = {
+    "n_sources": 4,                 # coupled Jansen-Rit columns per run
+    "n_channels": 6,                # sensors (lead field mixes the sources)
+    "K": [10.0, 30.0],              # inter-column gain (pulses/s per s^-1 of rate fluctuation)
+    "delay": [0.010, 0.025],        # cortico-cortical conduction delays (s)
+    "w_near": [0.5, 1.0],           # ring-neighbour connection weight (before row-normalisation)
+    "w_far": [0.0, 0.3],            # weight to the opposite column
+    "kappa_col": [0.5, 1.0],        # per-column multiplier of the BG -> cortex gain kappa
+    "lead_width": 0.6,              # lead-field Gaussian width (chord units, unit circle)
+    "lead_jitter": [0.8, 1.2],      # per-run multiplicative jitter of every lead-field gain
+    # Epileptic runs: one randomly placed column (the focus) is drawn from the
+    # epileptic (A, p_mean) ranges; the others from the healthy ones.
+    "epileptic_n_focus": 1,
+}
+
+
+def sample_network_params(cls: str, n: int, rng: np.random.Generator,
+                          regimes: dict | None = None, network: dict | None = None):
+    """Draw the parameters of ``n`` network runs of class ``cls``.
+
+    Per-column nuisance parameters (B, a, b, C, p_std) are drawn independently
+    for every column, so columns are heterogeneous (slightly different alpha
+    frequencies). Returns (NetworkParams, per-run metadata).
+    """
+    from .network import NetworkParams, ring_weights
+
+    if cls not in CLASSES:
+        raise ValueError(f"unknown class {cls!r}")
+    reg = regimes or DEFAULT_REGIMES
+    net = network or NETWORK_REGIMES
+    c = int(net["n_sources"])
+    loop, meta = sample_class_params(cls, n, rng, reg)       # BG loop + per-run draws
+
+    def u(spec, key, shape):
+        lo, hi = spec[key]
+        return rng.uniform(lo, hi, size=shape)
+
+    shared = reg["shared"]
+    healthy = {**shared, **reg["healthy"]}
+    col = {k: u(shared, k, (n, c)) for k in ("B", "a", "b", "C", "p_std")}
+    col["A"] = u(healthy, "A", (n, c))
+    col["p_mean"] = u(healthy, "p_mean", (n, c))
+    focus = np.full((n, c), False)
+    if cls == "epileptic":
+        ep = {**shared, **reg["epileptic"]}
+        for i in range(n):
+            f = rng.choice(c, size=int(net["epileptic_n_focus"]), replace=False)
+            focus[i, f] = True
+        col["A"] = np.where(focus, u(ep, "A", (n, c)), col["A"])
+        col["p_mean"] = np.where(focus, u(ep, "p_mean", (n, c)), col["p_mean"])
+    kappa = loop.kappa[:, None] * u(net, "kappa_col", (n, c))
+    W = ring_weights(c, rng, n, tuple(net["w_near"]), tuple(net["w_far"]))
+    D = u(net, "delay", (n, c, c))
+    params = NetworkParams(A=col["A"], B=col["B"], a=col["a"], b=col["b"], C=col["C"],
+                           p_mean=col["p_mean"], p_std=col["p_std"], kappa=kappa,
+                           w_sg=loop.w_sg, w_gs=loop.w_gs, w_gg=loop.w_gg, w_cs=loop.w_cs,
+                           ctx_drive=loop.ctx_drive, ctx_std=loop.ctx_std,
+                           str_inh=loop.str_inh, d_sg=loop.d_sg, d_gs=loop.d_gs,
+                           d_gg=loop.d_gg, d_bc=loop.d_bc, K=u(net, "K", n), W=W, D=D)
+    meta = dict(meta)
+    meta["focus"] = focus
+    return params, meta

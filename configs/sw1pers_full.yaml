@@ -1,0 +1,50 @@
+# SW1PerS + Riemannian benchmark, full configuration: the run reported in docs/SW1PERS_RESULTS.md
+# and figures/sw1pers/. ~1.5-2 h on 4 CPU cores.
+# All settings below were fixed before this configuration was first run. The simulation block and
+# seed equal configs/full.yaml, so the single-channel track is exactly the dataset of docs/RESULTS.md.
+name: sw1pers_full
+seed: 2026
+n_jobs: 4
+cache_dir: data/cache
+tracks: [single, multi]
+
+simulation:
+  runs_per_class: 80        # 240 runs per track
+  duration: 40.0            # -> 10 windows of 4 s per run, 2400 windows per track
+  fs: 250.0
+  dt: 0.0005
+  transient: 2.0
+
+measurement:
+  window: 4.0
+  pink_level: [0.2, 0.8]
+  white_level: [0.05, 0.2]
+  common_fraction: [0.2, 0.5]
+
+network: {}                 # 4 coupled Jansen-Rit columns, 6 channels (regimes.NETWORK_REGIMES)
+topology: {}                # existing descriptor, unchanged
+sw1pers: {}                 # SW1PersConfig defaults (Perea & Harer 2015): M = 12, T = 160, 8-NN mean-shift,
+                            # Z_11, scales 4 / 10 / 20 Hz + dominant period, CROCKER 1 s segments
+
+evaluation:
+  n_splits: 4               # same protocol as the first benchmark: 4 folds x 5 repeats
+  n_repeats: 5
+  bootstrap: 2000
+  rf_trees: 300
+  go_margin: 0.05
+
+cnn:
+  enabled: true
+  epochs: 25
+  batch_size: 64
+  lr: 0.001
+  weight_decay: 0.0001
+  width: 16
+
+sanity: {enabled: true}
+importance: {enabled: true, n_permutations: 5}
+
+outputs:
+  out_dir: results/sw1pers_full
+  figures_dir: figures/sw1pers
+  results_md: docs/SW1PERS_RESULTS.md

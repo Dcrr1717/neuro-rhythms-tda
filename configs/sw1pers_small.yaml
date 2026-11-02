@@ -1,0 +1,49 @@
+# SW1PerS + Riemannian benchmark, small configuration: offline, a few minutes on 4 cores (used by CI).
+# Too few runs for conclusions (wide CIs). The reported run is configs/sw1pers_full.yaml.
+name: sw1pers_small
+seed: 0
+n_jobs: 4
+cache_dir: data/cache
+tracks: [single, multi]
+
+simulation:
+  runs_per_class: 12        # simulation runs (virtual subjects) per class, per track
+  duration: 24.0            # s kept per run -> 6 windows of 4 s
+  fs: 250.0
+  dt: 0.0005
+  transient: 2.0
+
+measurement:
+  window: 4.0
+  pink_level: [0.2, 0.8]
+  white_level: [0.05, 0.2]
+  common_fraction: [0.2, 0.5]   # multi track: spatially shared part of the 1/f background
+
+network: {}                 # regimes.NETWORK_REGIMES defaults (4 columns, 6 channels)
+topology: {}                # TopoConfig defaults (the existing descriptor)
+sw1pers:                    # SW1PersConfig; fewer points than the full run, for speed
+  n_points: 100
+  crocker_points: 60
+
+evaluation:
+  n_splits: 4
+  n_repeats: 1
+  bootstrap: 500
+  rf_trees: 200
+  go_margin: 0.05
+
+cnn:
+  enabled: true
+  epochs: 10
+  batch_size: 64
+  lr: 0.001
+  weight_decay: 0.0001
+  width: 16
+
+sanity: {enabled: true}
+importance: {enabled: true, n_permutations: 2}
+
+outputs:
+  out_dir: results/sw1pers_small
+  figures_dir: results/sw1pers_small/figures
+  results_md: null          # -> results/sw1pers_small/SW1PERS_RESULTS.md

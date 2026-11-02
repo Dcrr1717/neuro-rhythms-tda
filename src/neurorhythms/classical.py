@@ -41,18 +41,23 @@ def check_folds(folds, groups) -> None:
             raise AssertionError("each sample must be tested exactly once per repeat")
 
 
-def build_classifier(name: str, seed: int, rf_trees: int = 300, n_jobs: int = 1):
+def build_classifier(name: str, seed: int, rf_trees: int = 300, n_jobs: int = 1, pre=None):
+    """LogReg (standardised) or RandomForest; ``pre`` is an optional factory of a
+    fold-local transformer placed first in the pipeline (e.g. the Riemannian
+    tangent-space projection, whose reference point is fitted on the training
+    fold only)."""
+    steps = [pre()] if pre is not None else []
     if name == "logreg":
-        return make_pipeline(StandardScaler(),
+        return make_pipeline(*steps, StandardScaler(),
                              LogisticRegression(C=1.0, max_iter=5000))
     if name == "rf":
-        return RandomForestClassifier(n_estimators=rf_trees, random_state=seed,
-                                      n_jobs=n_jobs)
+        rf = RandomForestClassifier(n_estimators=rf_trees, random_state=seed, n_jobs=n_jobs)
+        return make_pipeline(*steps, rf) if steps else rf
     raise ValueError(name)
 
 
 def cross_validate(F, y, folds, model: str, seed: int = 0, rf_trees: int = 300,
-                   n_jobs: int = 1, n_classes: int = 3) -> dict:
+                   n_jobs: int = 1, n_classes: int = 3, pre=None) -> dict:
     """Out-of-fold predictions of one classifier for every repeat."""
     F = np.asarray(F, dtype=float)
     y = np.asarray(y)
@@ -64,7 +69,7 @@ def cross_validate(F, y, folds, model: str, seed: int = 0, rf_trees: int = 300,
     jobs = [(r, k, tr, te) for r, rep in enumerate(folds) for k, (tr, te) in enumerate(rep)]
 
     def fit_one(r, k, tr, te, inner_jobs):
-        clf = build_classifier(model, seed + 1000 * r + k, rf_trees, inner_jobs)
+        clf = build_classifier(model, seed + 1000 * r + k, rf_trees, inner_jobs, pre)
         clf.fit(F[tr], y[tr])
         return clf.predict_proba(F[te])
 
