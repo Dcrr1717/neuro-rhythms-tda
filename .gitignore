@@ -7,5 +7,6 @@ build/
 dist/
 data/
 results/small/
+results/surrogate_small/
 results/*/oof_predictions.npz
 .venv/
