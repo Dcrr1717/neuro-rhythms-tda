@@ -196,7 +196,8 @@ def confusion_panels(mats: dict, classes, path):
         a.set_xticks(range(len(classes)))
         a.set_xticklabels(classes, fontsize=8)
         a.set_yticks(range(len(classes)))
-        a.set_yticklabels(classes, fontsize=8, rotation=90, va="center")
+        a.set_yticklabels(classes, fontsize=8, rotation=90 if max(map(len, classes)) > 4 else 0,
+                          va="center")
         a.set_xlabel("predicted")
         a.set_ylabel("true")
         a.set_title(title, fontsize=9)

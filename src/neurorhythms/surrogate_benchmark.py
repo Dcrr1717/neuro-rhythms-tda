@@ -394,8 +394,8 @@ def render(results: dict, data: dict) -> None:
                 np.array(six["confusion"]["union"])}
         if "cnn" in six["confusion"]:
             mats["1D-CNN"] = np.array(six["confusion"]["cnn"])
-        plots.confusion_panels(mats, six["labels"],
-                               os.path.join(fig, "surrogate_confusion_six_class.png"))
+        short = [f"{lab.split('/')[0][0].upper()}-{lab.split('/')[1][0]}" for lab in six["labels"]]
+        plots.confusion_panels(mats, short, os.path.join(fig, "surrogate_confusion_six_class.png"))
     if P.get("importance"):
         plots.importance_bars(P["importance"], os.path.join(fig, "surrogate_importance.png"))
     md = cfg["outputs"].get("results_md") or os.path.join(cfg["outputs"]["out_dir"], "RESULTS.md")

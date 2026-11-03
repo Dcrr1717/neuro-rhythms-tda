@@ -66,9 +66,14 @@ def write_surrogate_report(R: dict, path: str, fig_dir: str) -> None:
     w("")
     v = P.get("validity")
     if v:
+        leak = v["ci95"][0] > v["chance"]
         w(f"- **Validity.** The best feature set that is blind by construction (`{v['best_blind_set']}`) "
-          f"scores {v['accuracy']:.3f} {_ci(v['ci95'])}; chance is {v['chance']:.3f}. The task "
-          f"cannot be solved from what the surrogate preserves.")
+          f"scores {v['accuracy']:.3f} {_ci(v['ci95'])}; chance is {v['chance']:.3f}. "
+          + ("That is a small residual leak through the constraint this surrogate variant matches "
+             "only approximately (the histogram, for the spectrum-exact variant); the "
+             "histogram-exact robustness task swaps which constraint is exact. Either way the "
+             "leak is a few points at most, far below every structure-aware score."
+             if leak else "The task cannot be solved from what the surrogate preserves."))
     if G.get("as_briefed"):
         w(f"- As briefed, the descriptor {_verdict_sentence(G['as_briefed'], go)}.")
     w(f"- Strict: `baselines_union` scores {s['baselines_union_accuracy']:.3f}; headroom "
@@ -97,7 +102,7 @@ def write_surrogate_report(R: dict, path: str, fig_dir: str) -> None:
       f"{q['spectrum']['histogram_err']['median']:.1e} sd (median). Robustness variant (final step "
       f"= rank order): histogram exact, periodogram error "
       f"{q['amplitude']['spectrum_rel_err']['median']:.1e} (median). Correlation surrogate vs "
-      f"original: median |r| {q['spectrum']['corr']['median']:.2f}.")
+      f"original: median r = {q['spectrum']['corr']['median']:.2f}.")
     w(f"- **Protocol.** StratifiedGroupKFold ({ev['n_splits']} folds; repeats per task below), "
       f"group = simulation run, so a window and its surrogate are always on the same side. "
       f"LogReg and RandomForest ({ev['rf_trees']} trees), the better of the two per feature set; "
@@ -136,11 +141,14 @@ def write_surrogate_report(R: dict, path: str, fig_dir: str) -> None:
           + f" | {b['candidate']}: {_m(b['margin'])} {_mci(b['ci95'])} | "
           f"{T['gonogo']['strict']['verdict']} |")
     w("")
+    w("In the six-class task the blind features can still recognise the *rhythm* (three "
+      "classes) but not original vs surrogate, so their ceiling there is 0.5, not chance.\n")
     w(f"![tasks]({rel}/surrogate_tasks.png)\n")
 
     six = R["tasks"].get("six_class")
     if six and six.get("confusion"):
         w("## Six-class task: confusion matrices\n")
+        w("Labels: H = healthy, E = epileptic, P = parkinsonian; o = original, s = surrogate.\n")
         w(f"![confusion]({rel}/surrogate_confusion_six_class.png)\n")
 
     if P.get("importance"):
@@ -160,6 +168,7 @@ def write_surrogate_report(R: dict, path: str, fig_dir: str) -> None:
     w("## Example windows and surrogates\n")
     w(f"![examples]({rel}/surrogate_examples.png)\n")
     w("## Caveats\n")
+    w("- Synthetic data: the rhythms are regimes of neural-mass models; see `docs/SCIENCE.md`.")
     w("- The surrogate test asks for *any* departure from a linear Gaussian process seen through "
       "a static nonlinearity, within one window: nonlinear dynamics, but also within-window "
       "non-stationarity (e.g. one burst of spikes). It does not tell which of the two a feature "
