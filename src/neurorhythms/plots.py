@@ -196,7 +196,8 @@ def confusion_panels(mats: dict, classes, path):
         a.set_xticks(range(len(classes)))
         a.set_xticklabels(classes, fontsize=8)
         a.set_yticks(range(len(classes)))
-        a.set_yticklabels(classes, fontsize=8, rotation=90, va="center")
+        a.set_yticklabels(classes, fontsize=8, rotation=90 if max(map(len, classes)) > 4 else 0,
+                          va="center")
         a.set_xlabel("predicted")
         a.set_ylabel("true")
         a.set_title(title, fontsize=9)
@@ -247,5 +248,99 @@ def noise_sweep_plot(sweep: dict, path):
     ax.set_ylabel("accuracy (grouped CV)")
     ax.set_xticks(scales)
     ax.legend(fontsize=8)
+    fig.tight_layout()
+    _save(fig, path)
+
+
+# ---------------------------------------------------------------------------
+# IAAFT surrogate benchmark
+# ---------------------------------------------------------------------------
+def surrogate_examples(Xo, Xs, label, run, fs, classes, path, seed: int = 0, tau: int = 5):
+    """Per class: a window and its IAAFT surrogate, their periodograms (identical),
+    delay embeddings and lag-tau increment distributions (time asymmetry)."""
+    from .features.baseline import welch_psd as _psd
+    rng = np.random.default_rng(seed)
+    fig, ax = plt.subplots(len(classes), 4, figsize=(17, 2.9 * len(classes)),
+                           gridspec_kw={"width_ratios": [3.0, 1.25, 1.25, 1.25]})
+    t = np.arange(Xo.shape[1]) / fs
+    last = len(classes) - 1
+    for ci, cls in enumerate(classes):
+        r = rng.choice(np.unique(run[label == ci]))
+        idx = np.nonzero(run == r)[0]
+        i = rng.choice(idx)
+        xo, xs = Xo[i].astype(float), Xs[i].astype(float)
+        a = ax[ci, 0]
+        a.plot(t, xo + 3.5, color=C1, lw=0.8, label="original")
+        a.plot(t, xs - 3.5, color=C2, lw=0.8, label="IAAFT surrogate")
+        a.set_yticks([])
+        a.set_ylabel(cls)
+        a.set_xlim(0, t[-1])
+        if ci == 0:
+            a.set_title("a window (top) and its surrogate (bottom)")
+            a.legend(loc="upper right", fontsize=7, ncol=2)
+        if ci == last:
+            a.set_xlabel("time (s)")
+        a = ax[ci, 1]
+        f, po = _psd(xo[None], fs, method="periodogram")
+        _, ps = _psd(xs[None], fs, method="periodogram")
+        m = (f >= 1) & (f <= 45)
+        a.semilogy(f[m], po[0, m], color=C1, lw=2.2)
+        a.semilogy(f[m], ps[0, m], color=C2, lw=1.0, ls="--")
+        if ci == 0:
+            a.set_title("periodogram (identical)")
+        if ci == last:
+            a.set_xlabel("frequency (Hz)")
+        a = ax[ci, 2]
+        a.plot(xo[:-tau], xo[tau:], color=C1, lw=0.4, alpha=0.8)
+        a.plot(xs[:-tau], xs[tau:], color=C2, lw=0.4, alpha=0.6)
+        a.set_aspect("equal", adjustable="datalim")
+        if ci == 0:
+            a.set_title(f"delay embedding, tau={tau / fs * 1e3:.0f} ms")
+        a.set_ylabel("x(t + tau)")
+        if ci == last:
+            a.set_xlabel("x(t)")
+        a = ax[ci, 3]
+        do = (Xo[idx][:, tau:] - Xo[idx][:, :-tau]).ravel()
+        ds = (Xs[idx][:, tau:] - Xs[idx][:, :-tau]).ravel()
+        bins = np.linspace(-3.5, 3.5, 61)
+        a.hist(do, bins=bins, histtype="step", color=C1, lw=1.6, density=True)
+        a.hist(ds, bins=bins, histtype="step", color=C2, lw=1.2, density=True, ls="--")
+        a.set_yscale("log")
+        if ci == 0:
+            a.set_title(f"increments x(t+{tau / fs * 1e3:.0f} ms) - x(t), run")
+        if ci == last:
+            a.set_xlabel("increment (z)")
+    fig.tight_layout()
+    _save(fig, path)
+
+
+def task_overview(tasks: dict, path):
+    """Dot plot: accuracy of key feature sets on every surrogate task."""
+    style = [("periodogram_psd", "periodogram PSD (blind)", INK2, "o", "none"),
+             ("bandpower+hjorth", "band power + Hjorth (Welch)", C1, "o", "none"),
+             ("nonlinear", "classical nonlinear stats", C1, "D", None),
+             ("baselines_union", "all non-topological", C1, "s", None),
+             ("topo", "topology", C2, "o", "none"),
+             ("union", "all + topology", C2, "s", None),
+             ("cnn", "1D-CNN", C3, "^", None)]
+    names = list(tasks)
+    fig, ax = plt.subplots(figsize=(8.5, 0.6 * len(names) + 2.4))
+    yp = np.arange(len(names))[::-1]
+    for y_, tn in zip(yp, names):
+        T = tasks[tn]
+        ax.plot([T["chance"]] * 2, [y_ - 0.3, y_ + 0.3], color=INK2, lw=1)
+        for key, _, col, mk, face in style:
+            if key in T["summary"]:
+                ax.plot(T["summary"][key]["accuracy"], y_, mk, ms=8,
+                        color=col, mfc=face if face else col, mew=1.5, alpha=0.9)
+    ax.set_yticks(yp)
+    ax.set_yticklabels([n.replace("_", " ") for n in names])
+    ax.set_xlabel("accuracy (grouped CV); grey tick = chance")
+    from matplotlib.lines import Line2D
+    ax.legend(handles=[Line2D([], [], ls="", marker=mk, color=col, mfc=face if face else col,
+                              mew=1.5, ms=7, label=lab) for _, lab, col, mk, face in style],
+              loc="upper center", bbox_to_anchor=(0.5, -0.12 - 0.6 / (len(names) + 3)),
+              ncol=3, fontsize=7.5)
+    ax.grid(axis="y", visible=False)
     fig.tight_layout()
     _save(fig, path)

@@ -1,0 +1,22 @@
+# IAAFT surrogate benchmark, small default configuration (~1.5 min, used by CI).
+# Too few runs for conclusions; configs/surrogate_full.yaml is the reported run.
+name: surrogate_small
+seed: 0
+n_jobs: 4
+cache_dir: data/cache
+
+simulation: {runs_per_class: 12, duration: 24.0, fs: 250.0, dt: 0.0005, transient: 2.0}
+measurement: {window: 4.0, pink_level: [0.2, 0.8], white_level: [0.05, 0.2]}
+surrogate:
+  n_iter: 100               # IAAFT iterations (stops earlier if the rank order converges)
+  end_match_search: 0.4     # s; window start chosen so that its ends join smoothly
+topology: {}
+evaluation: {n_splits: 4, bootstrap: 500, rf_trees: 200, go_margin: 0.05}
+cnn: {epochs: 8, batch_size: 64, lr: 0.001, weight_decay: 0.0001, width: 16}
+importance: {enabled: true, n_permutations: 2}
+
+tasks:
+  - {name: binary_pooled, target: binary, classes: all, surrogate: spectrum, n_repeats: 1, cnn: true, sets: all, primary: true}
+  - {name: six_class, target: six, classes: all, surrogate: spectrum, n_repeats: 1, cnn: false, sets: key}
+
+outputs: {out_dir: results/surrogate_small, figures_dir: results/surrogate_small/figures, results_md: null}

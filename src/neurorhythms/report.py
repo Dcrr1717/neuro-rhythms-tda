@@ -37,8 +37,9 @@ def _verdict_sentence(row, go):
     else:
         s = f"does not reach the +{go:.2f} GO margin"
     if ci[0] > 0:
-        s += "; the 95 % CI lies above 0 (a statistically detectable but "
-        s += "practically small gain)" if m < go else ")"
+        s += "; the 95 % CI lies above 0"
+        if m < go:
+            s += " (a statistically detectable but practically small gain)"
     elif ci[1] < 0:
         s += "; the 95 % CI lies below 0 (the candidate is worse)"
     else:

@@ -25,11 +25,27 @@ BANDS = {"delta": (1.0, 4.0), "theta": (4.0, 8.0), "alpha": (8.0, 13.0),
 F_LO, F_HI = 1.0, 45.0
 
 
-def welch_psd(X: np.ndarray, fs: float, seg_sec: float = 1.0):
-    """Welch PSD of every row of X (Hann, 50 % overlap)."""
-    nper = int(round(seg_sec * fs))
-    f, p = sps.welch(X, fs=fs, nperseg=nper, noverlap=nper // 2, axis=-1)
-    return f, p
+def welch_psd(X: np.ndarray, fs: float, seg_sec: float = 1.0, method: str = "welch"):
+    """PSD of every row of X.
+
+    ``method="welch"`` (default, used by the main benchmark): Hann segments of
+    ``seg_sec`` s, 50 % overlap. ``method="periodogram"``: the raw periodogram of
+    the whole window (rectangular taper) summed into 1-Hz bins centred on integer
+    frequencies; this is exactly the quantity an IAAFT surrogate preserves.
+    """
+    if method == "welch":
+        nper = int(round(seg_sec * fs))
+        return sps.welch(X, fs=fs, nperseg=nper, noverlap=nper // 2, axis=-1)
+    if method != "periodogram":
+        raise ValueError(method)
+    X = np.atleast_2d(np.asarray(X, dtype=float))
+    f = np.fft.rfftfreq(X.shape[-1], 1.0 / fs)
+    p = np.abs(np.fft.rfft(X, axis=-1)) ** 2
+    edges = np.arange(0.5, fs / 2, 1.0)
+    idx = np.digitize(f, edges)                     # bin k covers [k - 0.5, k + 0.5)
+    k = len(edges) + 1
+    pb = np.stack([np.bincount(idx, weights=row, minlength=k) for row in p])
+    return np.arange(k, dtype=float), pb
 
 
 def _band(f, p, lo, hi):
@@ -37,8 +53,8 @@ def _band(f, p, lo, hi):
     return p[:, m].sum(axis=1)
 
 
-def bandpower_features(X: np.ndarray, fs: float):
-    f, p = welch_psd(X, fs)
+def bandpower_features(X: np.ndarray, fs: float, method: str = "welch"):
+    f, p = welch_psd(X, fs, method=method)
     m = (f >= F_LO) & (f <= F_HI)
     fm, pm = f[m], p[:, m]
     total = pm.sum(axis=1) + 1e-20
@@ -84,8 +100,8 @@ def waveform_features(X: np.ndarray):
     return np.column_stack([sk, ku, ll]), ["skewness", "kurtosis", "line_length"]
 
 
-def psd_features(X: np.ndarray, fs: float):
-    f, p = welch_psd(X, fs)
+def psd_features(X: np.ndarray, fs: float, method: str = "welch"):
+    f, p = welch_psd(X, fs, method=method)
     m = (f >= F_LO) & (f <= F_HI)
     pm = p[:, m]
     rel = pm / (pm.sum(axis=1, keepdims=True) + 1e-20)

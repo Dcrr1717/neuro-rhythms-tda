@@ -287,11 +287,8 @@ spectral (an alpha peak, a beta peak, slow spike-and-wave activity), a
 topological description of the trace re-encodes information that a
 well-built spectral feature set already has. It is a faithful
 representation, but it is not a better one, and it degrades faster with
-noise. This matches the GEM geophysical-flow benchmark. A fair next test
-for topology would be a task where spectra are matched by construction, as
-in GEM's IAAFT-surrogate design: for example, healthy vs epileptic windows
-with identical power spectra and amplitude distributions but different
-temporal structure.
+noise. This matches the GEM geophysical-flow benchmark. The fairer test,
+where spectra are matched by construction, is section 8.
 
 ## 7. What this can and cannot tell you
 
@@ -321,15 +318,140 @@ temporal structure.
   that is precisely what the strict baselines (skewness, kurtosis, line
   length) also capture.
 
+## 8. Follow-up: the IAAFT surrogate benchmark
+
+Section 6 left one obvious objection. The three classes are defined by
+signatures that were found with spectral methods, so a spectral baseline
+starts with a structural advantage. Topology might shine only where the
+spectrum is silent. The surrogate benchmark (`python -m
+neurorhythms.surrogate_benchmark`, results in
+[`RESULTS_SURROGATE.md`](RESULTS_SURROGATE.md)) removes that advantage by
+construction. It mirrors the IAAFT design of the GEM benchmark.
+
+### 8.1 Design
+
+* **Surrogate data.** This is the classical test for nonlinearity in time
+  series (Theiler et al. 1992; Schreiber & Schmitz 2000; Lancaster et al.
+  2018), applied to EEG by, among others, Andrzejak et al. (2001) and Stam
+  (2005). An *iterative amplitude-adjusted Fourier-transform* surrogate
+  (Schreiber & Schmitz 1996) has the same power spectrum and the same
+  amplitude distribution as the original, but random Fourier phases. It is
+  what a linear Gaussian process, seen through a static nonlinear
+  "electrode", would produce. Anything that tells original from surrogate
+  must therefore detect *nonlinear temporal structure*, for example:
+  * time-irreversibility (a sharp rise followed by a slow decay);
+  * phase coupling between harmonics (non-sinusoidal waveforms);
+  * transients.
+* **Data.** The same 240 runs as the main benchmark. Each run gives 9
+  windows of 4 s. A window's start is shifted by at most 0.4 s so that its
+  two ends join smoothly in value and slope; this avoids the end-point
+  artefact of Fourier surrogates (Schreiber & Schmitz 2000). Every window
+  gets its own surrogate.
+* **Primary task.** Original vs surrogate, pooled over the three rhythms.
+* **Secondary tasks:**
+  * the same comparison for each rhythm separately;
+  * a six-class task (rhythm × original/surrogate);
+  * a robustness variant whose surrogates match the histogram exactly
+    instead of the spectrum.
+* **Cross-validation.** Grouped by run: a window and its surrogate never
+  sit on opposite sides of a split.
+* **Validity checks.** Features computed from what the surrogate preserves
+  must score chance:
+  * spectral features from the full-window periodogram: exactly 0.500;
+  * one-point statistics: at most 0.517;
+  * Hjorth parameters: 0.500.
+
+  One subtlety found while building the benchmark: band powers computed
+  with the usual **Welch** estimator are *not* blind (0.59). Averaging
+  Hann-windowed 1-s segments makes them sensitive to how the oscillation's
+  envelope waxes and wanes within the window, and phase randomisation
+  changes that.
+* **The strict competitor.** The classical nonlinear statistics, the
+  non-topological tools a time-series analyst would use for this job:
+  * time-reversal asymmetry at 7 lags (Diks et al. 1995);
+  * third-order autocorrelation (Theiler et al. 1992);
+  * increment flatness;
+  * rise fraction;
+  * peak/trough sharpness and rise/decay steepness asymmetry, the
+    waveform-shape measures that revealed non-sinusoidal beta in
+    Parkinson's disease (Cole et al. 2017; Cole & Voytek 2017).
+
+### 8.2 Results
+
+Accuracy, chance = 0.5. Margins are given with 95 % group-bootstrap CIs.
+
+| task | classical nonlinear stats | all non-topological | topology alone | all + topology (best) | 1D-CNN |
+|---|---|---|---|---|---|
+| pooled (primary) | 0.891 | 0.907 | 0.852 | 0.906 | 0.913 |
+| healthy | 0.811 | 0.846 | 0.803 | 0.841 | 0.832 |
+| epileptic | 0.999 | 0.997 | 0.998 | 0.999 | 0.999 |
+| parkinsonian | 0.873 | 0.878 | 0.743 | 0.879 | 0.912 |
+
+1. **Topology does see nonlinear structure.** Original and surrogate have
+   identical spectra and histograms, yet the topological view alone tells
+   them apart 85 % of the time. Persistent homology of the sublevel sets
+   and of the delay embedding is sensitive to waveform asymmetry, which
+   the spectrum cannot be. This is the positive result worth keeping.
+2. **But less of it than the classical statistics.** On the primary task,
+   25 classical nonlinear statistics beat the 464-dimensional topological
+   view by 0.039 [0.025, 0.054]. The gap is largest for parkinsonian beta
+   (0.130 [0.099, 0.161]). The beta waveform's asymmetry is a
+   rise/decay-steepness effect that time-reversal and sharpness
+   statistics measure directly. The persistence of peaks and loops barely
+   sees it.
+3. **And it adds nothing to them.**
+   * *Verdict: NO-GO on every task.* This time a GO was possible: the
+     headroom over the non-topological union was 0.09 on the primary task
+     and up to 0.15 per rhythm.
+   * The best topology-containing set ties the non-topological union:
+     -0.001 [-0.009, +0.007] on the primary task, and within ±0.005 on
+     every other task.
+   * The full topological vector added to the baselines slightly *hurts*
+     the six-class task: -0.018 [-0.034, -0.004].
+   * The histogram-exact variant gives the same picture: tie,
+     -0.000 [-0.006, +0.005].
+4. **Where the nonlinearity lives.**
+   * *Epileptic spike-and-wave:* the most nonlinear rhythm. It is strongly
+     time-irreversible: sharp rise, slow decay; compare the skewed increment
+     distribution of the original with its symmetric surrogate in
+     `figures/surrogate/surrogate_examples.png`. Every method separates it
+     from its surrogate almost perfectly.
+   * *Healthy alpha:* the Jansen-Rit limit cycle carries weaker nonlinear
+     structure (0.80-0.85 for every method). Apart from the epileptic task,
+     where every method is at ceiling, this is the only rhythm where
+     topology matches the classical statistics: -0.008 [-0.031, +0.014].
+   * *Parkinsonian beta:* intermediate.
+5. **The CNN finds something the hand-made features miss, in
+   parkinsonian beta.** On that task the 1D-CNN beats all non-topological
+   features by +0.034 [+0.018, +0.049]. That is the only CI above zero
+   against the baseline union anywhere in either benchmark, though still
+   below the +0.05 rule. On the pooled task it ties: +0.006
+   [-0.002, +0.015].
+
+**Bottom line.** The surrogate design answers the objection to section 6.
+Even when the spectrum and the amplitude distribution carry no information
+at all, the topological view is not better than the classical tools for
+nonlinear structure, and it is not complementary to them either. It is a
+genuine but redundant detector of nonlinear waveform structure, weakest
+precisely on the non-sinusoidal beta that motivates waveform analysis in
+Parkinson's disease. In the language of GEM: GO against the spectral
+baselines named in the brief (+0.25, but they are nearly blind by
+construction, so the comparison is uninformative), NO-GO against strong
+baselines.
+
 ## References
 
+* Andrzejak RG, Lehnertz K, Mormann F, Rieke C, David P, Elger CE (2001). Indications of nonlinear deterministic and finite-dimensional structures in time series of brain electrical activity: dependence on recording region and brain state. *Phys Rev E* 64:061907.
 * Bevan MD, Magill PJ, Terman D, Bolam JP, Wilson CJ (2002). Move to the rhythm: oscillations in the subthalamic nucleus-external globus pallidus network. *Trends Neurosci* 25:525-531.
 * Blumenfeld H (2005). Cellular and network mechanisms of spike-wave seizures. *Epilepsia* 46(Suppl 9):21-33.
 * Breakspear M, Roberts JA, Terry JR, Rodrigues S, Mahant N, Robinson PA (2006). A unifying explanation of primary generalized seizures through nonlinear brain modeling and bifurcation analysis. *Cereb Cortex* 16:1296-1313.
 * Brown P, Oliviero A, Mazzone P, Insola A, Tonali P, Di Lazzaro V (2001). Dopamine dependency of oscillations between subthalamic nucleus and pallidum in Parkinson's disease. *J Neurosci* 21:1033-1038.
 * Bubenik P (2015). Statistical topological data analysis using persistence landscapes. *J Mach Learn Res* 16:77-102.
+* Cole SR, van der Meij R, Peterson EJ, de Hemptinne C, Starr PA, Voytek B (2017). Nonsinusoidal beta oscillations reflect cortical pathophysiology in Parkinson's disease. *J Neurosci* 37:4830-4840.
+* Cole SR, Voytek B (2017). Brain oscillations and the importance of waveform shape. *Trends Cogn Sci* 21:137-149.
 * David O, Friston KJ (2003). A neural mass model for MEG/EEG: coupling and neuronal dynamics. *NeuroImage* 20:1743-1755.
 * Destexhe A (1998). Spike-and-wave oscillations based on the properties of GABA-B receptors. *J Neurosci* 18:9099-9111.
+* Diks C, van Houwelingen JC, Takens F, DeGoede J (1995). Reversibility as a criterion for discriminating time series. *Phys Lett A* 201:221-228.
 * Edelsbrunner H, Harer J (2010). *Computational Topology: An Introduction*. American Mathematical Society.
 * Esteller R, Echauz J, Tcheng T, Litt B, Pless B (2001). Line length: an efficient feature for seizure onset detection. *Proc. 23rd Annu. Int. Conf. IEEE EMBS*, 1707-1710.
 * Field CA, Welsh AH (2007). Bootstrapping clustered data. *J R Stat Soc B* 69:369-390.
@@ -340,6 +462,7 @@ temporal structure.
 * Jansen BH, Rit VG (1995). Electroencephalogram and visual evoked potential generation in a mathematical model of coupled cortical columns. *Biol Cybern* 73:357-366.
 * Kapoor S, Narayanan A (2023). Leakage and the reproducibility crisis in machine-learning-based science. *Patterns* 4:100804.
 * Kühn AA, Kupsch A, Schneider GH, Brown P (2006). Reduction in subthalamic 8-35 Hz oscillatory activity correlates with clinical improvement in Parkinson's disease. *Eur J Neurosci* 23:1956-1960.
+* Lancaster G, Iatsenko D, Pidde A, Ticcinelli V, Stefanovska A (2018). Surrogate data for hypothesis testing of physical systems. *Phys Rep* 748:1-60.
 * Little S, Brown P (2014). The functional role of beta oscillations in Parkinson's disease. *Parkinsonism Relat Disord* 20(Suppl 1):S44-S48.
 * Litvak V, Jha A, Eusebio A, Oostenveld R, Foltynie T, Limousin P, Zrinzo L, Hariz MI, Friston K, Brown P (2011). Resting oscillatory cortico-subthalamic connectivity in patients with Parkinson's disease. *Brain* 134:359-374.
 * Lopes da Silva FH, Hoeks A, Smits H, Zetterberg LH (1974). Model of brain rhythmic activity: the alpha-rhythm of the thalamus. *Kybernetik* 15:27-37.
@@ -351,12 +474,16 @@ temporal structure.
 * Roberts DR, Bahn V, Ciuti S, et al. (2017). Cross-validation strategies for data with temporal, spatial, hierarchical, or phylogenetic structure. *Ecography* 40:913-929.
 * Roy Y, Banville H, Albuquerque I, Gramfort A, Falk TH, Faubert J (2019). Deep learning-based electroencephalography analysis: a systematic review. *J Neural Eng* 16:051001.
 * Schirrmeister RT, Springenberg JT, Fiederer LDJ, et al. (2017). Deep learning with convolutional neural networks for EEG decoding and visualization. *Hum Brain Mapp* 38:5391-5420.
+* Schreiber T, Schmitz A (1996). Improved surrogate data for nonlinearity tests. *Phys Rev Lett* 77:635-638.
+* Schreiber T, Schmitz A (2000). Surrogate time series. *Physica D* 142:346-382.
 * Soikkeli R, Partanen J, Soininen H, Pääkkönen A, Riekkinen P Sr (1991). Slowing of EEG in Parkinson's disease. *Electroencephalogr Clin Neurophysiol* 79:159-165.
+* Stam CJ (2005). Nonlinear dynamical analysis of EEG and MEG: review of an emerging field. *Clin Neurophysiol* 116:2266-2301.
 * Takens F (1981). Detecting strange attractors in turbulence. In: *Dynamical Systems and Turbulence*, Lecture Notes in Mathematics 898:366-381.
 * Taylor PN, Baier G (2011). A spatially extended model for macroscopic spike-wave discharges. *J Comput Neurosci* 31:679-684.
 * The GUDHI Project (2015-). *GUDHI User and Reference Manual*. https://gudhi.inria.fr
+* Theiler J, Eubank S, Longtin A, Galdrikian B, Farmer JD (1992). Testing for nonlinearity in time series: the method of surrogate data. *Physica D* 58:77-94.
 * Touboul J, Wendling F, Chauvel P, Faugeras O (2011). Neural mass activity, bifurcations, and epilepsy. *Neural Comput* 23:3232-3286.
-* Wendling F, Bellanger JJ, Bartolomei F, Chauvel P (2000). Relevance of nonlinear lumped-parameter models in the analysis of depth-EEG epileptic signals. *Biol Cybern* 83:367-378.
 * Wendling F, Bartolomei F, Bellanger JJ, Chauvel P (2002). Epileptic fast activity can be explained by a model of impaired GABAergic dendritic inhibition. *Eur J Neurosci* 15:1499-1508.
+* Wendling F, Bellanger JJ, Bartolomei F, Chauvel P (2000). Relevance of nonlinear lumped-parameter models in the analysis of depth-EEG epileptic signals. *Biol Cybern* 83:367-378.
 * Williams D, Tijssen M, van Bruggen G, et al. (2002). Dopamine-dependent changes in the functional connectivity between basal ganglia and cerebral cortex in humans. *Brain* 125:1558-1569.
 * Wilson HR, Cowan JD (1972). Excitatory and inhibitory interactions in localized populations of model neurons. *Biophys J* 12:1-24.

@@ -1,0 +1,31 @@
+# IAAFT surrogate benchmark, full configuration (the reported run).
+# Same simulation runs and measurement model as configs/full.yaml (seed 2026, 240 runs),
+# 9 end-matched 4 s windows per run, one IAAFT surrogate per window.
+# ~1.5 h on 4 CPU cores. All settings were fixed before this configuration was first run;
+# only the small configuration had been run at that point.
+name: surrogate_full
+seed: 2026
+n_jobs: 4
+cache_dir: data/cache
+
+simulation: {runs_per_class: 80, duration: 40.0, fs: 250.0, dt: 0.0005, transient: 2.0}
+measurement: {window: 4.0, pink_level: [0.2, 0.8], white_level: [0.05, 0.2]}
+surrogate: {n_iter: 100, end_match_search: 0.4}
+topology: {}
+evaluation: {n_splits: 4, bootstrap: 2000, rf_trees: 300, go_margin: 0.05}
+cnn: {epochs: 15, batch_size: 64, lr: 0.001, weight_decay: 0.0001, width: 16}
+importance: {enabled: true, n_permutations: 3}
+
+tasks:
+  # primary: original vs surrogate, all three rhythms pooled
+  - {name: binary_pooled, target: binary, classes: all, surrogate: spectrum, n_repeats: 3, cnn: true, sets: all, primary: true}
+  # where does the nonlinear structure live? one rhythm at a time
+  - {name: binary_healthy, target: binary, classes: [healthy], surrogate: spectrum, n_repeats: 2, cnn: true, sets: key}
+  - {name: binary_epileptic, target: binary, classes: [epileptic], surrogate: spectrum, n_repeats: 2, cnn: true, sets: key}
+  - {name: binary_parkinsonian, target: binary, classes: [parkinsonian], surrogate: spectrum, n_repeats: 2, cnn: true, sets: key}
+  # rhythm x original/surrogate
+  - {name: six_class, target: six, classes: all, surrogate: spectrum, n_repeats: 2, cnn: false, sets: key}
+  # robustness: histogram-exact surrogates (final IAAFT step = rank order)
+  - {name: binary_pooled_histogram_exact, target: binary, classes: all, surrogate: amplitude, n_repeats: 2, cnn: false, sets: key}
+
+outputs: {out_dir: results/surrogate_full, figures_dir: figures/surrogate, results_md: docs/RESULTS_SURROGATE.md}
